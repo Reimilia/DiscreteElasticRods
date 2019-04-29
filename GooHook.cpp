@@ -1,6 +1,8 @@
 #include "GooHook.h"
 #include <Eigen/SparseQR>
 using namespace Eigen;
+
+
 void GooHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 {
 	if (ImGui::CollapsingHeader("Configuration", ImGuiTreeNodeFlags_DefaultOpen))
@@ -25,13 +27,13 @@ void GooHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 	}
     if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0Saws\0\0");
-        ImGui::Combo("Connector Type", (int *)&params_.connectorType, "Springs\0Rigid Rods\0Flexible Rods\0\0");
+        ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0\0");
+        ImGui::Combo("Connector Type", (int *)&params_.connectorType, "Flexible Rods\0\0");
     }
     if (ImGui::CollapsingHeader("Simulation Options", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Combo("Constraint Handling", (int *)&params_.constraintHandling, "Penalty Method\0Step and Project\0Lagrange Multipliers\0\0");
-		ImGui::Combo("Integrator", (int *)&params_.integrator, "Velocity Verlet\0Implicit Midpoint\0\0");
+        //ImGui::Combo("Constraint Handling", (int *)&params_.constraintHandling, "Penalty Method\0Step and Project\0Lagrange Multipliers\0\0");
+		//ImGui::Combo("Integrator", (int *)&params_.integrator, "Velocity Verlet\0Implicit Midpoint\0\0");
         ImGui::InputDouble("Timestep",  &params_.timeStep);
         ImGui::InputDouble("Newton Tolerance", &params_.NewtonTolerance);
         ImGui::InputInt("Newton Max Iters", &params_.NewtonMaxIters);
@@ -41,12 +43,9 @@ void GooHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
     {
         ImGui::Checkbox("Gravity Enabled", &params_.gravityEnabled);
         ImGui::InputDouble("  Gravity g", &params_.gravityG);
-        ImGui::Checkbox("Springs Enabled", &params_.springsEnabled);
-        ImGui::InputDouble("  Max Strain", &params_.maxSpringStrain);
-        ImGui::Checkbox("Damping Enabled", &params_.dampingEnabled);
-        ImGui::InputDouble("  Viscosity", &params_.dampingStiffness);
         ImGui::Checkbox("Floor Enabled", &params_.floorEnabled);
         ImGui::Checkbox("Bending Enabled", &params_.bendingEnabled);
+		ImGui::Checkbox("Twist Enabled", &params_.twistEnabled);
         //viewer.imgui->addWindow(Eigen::Vector2i(1000, 0), "New Objects");
     }
 
@@ -56,18 +55,6 @@ void GooHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
         ImGui::Checkbox("Is Fixed", &params_.particleFixed);
         ImGui::InputDouble("Mass", &params_.particleMass);
     }
-
-    if (ImGui::CollapsingHeader("New Saws", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        ImGui::InputDouble("Radius", &params_.sawRadius);
-    }
-
-    if (ImGui::CollapsingHeader("New Springs", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        ImGui::InputDouble("Max Spring Dist", &params_.maxSpringDist);
-        ImGui::InputDouble("Base Stiffness", &params_.springStiffness);
-    }
-
 
     if (ImGui::CollapsingHeader("New Rods", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -82,7 +69,7 @@ void GooHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 
 void GooHook::updateRenderGeometry()
 {
-    double baseradius = 0.02;
+    double baseradius = 0.01;
     double pulsefactor = 0.1;
     double pulsespeed = 50.0;
 
@@ -107,89 +94,54 @@ void GooHook::updateRenderGeometry()
 
     if(params_.floorEnabled)
     {
-        for (int i = 0; i < 6; i++)
+        /*for (int i = 0; i < 5; i++)
         {
             vertexColors.push_back(Eigen::Vector3d(0.3, 1.0, 0.3));
-        }
+        }*/
 
-        verts.push_back(Eigen::Vector3d(-1, -0.5, eps));
-        verts.push_back(Eigen::Vector3d(1, -0.5, eps));
-        verts.push_back(Eigen::Vector3d(-1, -1, eps));
+        verts.push_back(Eigen::Vector3d(0, -1, 0));
+        verts.push_back(Eigen::Vector3d(1, -1, 1));
+		verts.push_back(Eigen::Vector3d(-1, -1, 1));
+		verts.push_back(Eigen::Vector3d(-1, -1, -1));
+		verts.push_back(Eigen::Vector3d(1, -1, -1));
 
-        faces.push_back(Eigen::Vector3i(idx, idx + 1, idx + 2));
-
-        verts.push_back(Eigen::Vector3d(-1, -1, eps));
-        verts.push_back(Eigen::Vector3d(1, -0.5, eps));
-        verts.push_back(Eigen::Vector3d(1, -1, eps));
-        faces.push_back(Eigen::Vector3i(idx + 3, idx + 4, idx + 5));
-        idx += 6;
+		faces.push_back(Eigen::Vector3i(idx + 0, idx + 2, idx + 1));
+		faces.push_back(Eigen::Vector3i(idx + 0, idx + 3, idx + 2));
+		faces.push_back(Eigen::Vector3i(idx + 0, idx + 4, idx + 3));
+		faces.push_back(Eigen::Vector3i(idx + 0, idx + 1, idx + 4));
+		
+		idx += 5;
     }
 
-
+	double basescale = 0.1;
     for(std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         switch((*it)->getType())
         {
         case SimParameters::CT_SPRING:
-        {
-            Eigen::Vector3d color;
-            if((*it)->associatedBendingStencils.empty())
-                color << 0.0, 0.0, 1.0;
-            else
-                color << 0.75, 0.5, 0.75;
-            Vector2d sourcepos = particles_[(*it)->p1].pos;
-            Vector2d destpos   = particles_[(*it)->p2].pos;
+		case SimParameters::CT_RIGIDROD:
+		{
+			Vector2d sourcepos = particles_[(*it)->p1].pos;
+			Vector2d destpos = particles_[(*it)->p2].pos;
 
-            Vector2d vec = destpos - sourcepos;
-            Vector2d perp(-vec[1], vec[0]);
-            perp /= perp.norm();
+			Vector2d vec = destpos - sourcepos;
+			double width = vec.norm();
+			Eigen::Vector3d c = Eigen::Vector3d((sourcepos[0] + destpos[0]) / 2.0, (sourcepos[1] + destpos[1]) / 2.0, 0);
+			Eigen::Vector3d rot = Eigen::Vector3d(0, 0, std::atan2(vec[1],vec[0]));
 
-            double dist = (sourcepos-destpos).norm();
+			int nverts = rodV.rows();
+			int nfaces = rodF.rows();
+			for (int i = 0; i < nverts; i++)
+			{
+				Eigen::Vector3d pos = c + basescale * width * VectorMath::rotationMatrix(rot) * rodV.row(i).transpose();
+				verts.push_back(pos);
+			}
+			for (int i = 0; i < nfaces; i++)
+			{
+				faces.push_back(rodF.row(i).transpose() +idx * Eigen::Vector3i::Ones());
+			}
 
-            double width = baselinewidth/(1.0+ 20.0 * dist * dist);
-
-            for (int i = 0; i < 4; i++)
-                vertexColors.push_back(color);
-
-            verts.push_back(Eigen::Vector3d(sourcepos[0] + width * perp[0], sourcepos[1] + width * perp[1], -eps));
-            verts.push_back(Eigen::Vector3d(sourcepos[0] - width * perp[0], sourcepos[1] - width * perp[1], -eps));
-            verts.push_back(Eigen::Vector3d(destpos[0] + width * perp[0], destpos[1] + width * perp[1], -eps));
-            verts.push_back(Eigen::Vector3d(destpos[0] - width * perp[0], destpos[1] - width * perp[1], -eps));
-
-            faces.push_back(Eigen::Vector3i(idx, idx + 1, idx + 2));
-            faces.push_back(Eigen::Vector3i(idx + 2, idx + 1, idx + 3));
-            idx += 4;
-
-            break;
-        }
-        case SimParameters::CT_RIGIDROD:
-        {
-            Eigen::Vector3d color;
-            if((*it)->associatedBendingStencils.empty())
-                color << 1.0, 0.0, 1.0;
-            else
-                color << 1.0, 1.0, 0.3;
-
-            Vector2d sourcepos = particles_[(*it)->p1].pos;
-            Vector2d destpos   = particles_[(*it)->p2].pos;
-            Vector2d vec = destpos - sourcepos;
-            Vector2d perp(-vec[1], vec[0]);
-            perp /= perp.norm();
-
-            double width = baselinewidth;
-
-            for (int i = 0; i < 4; i++)
-                vertexColors.push_back(color);
-
-            verts.push_back(Eigen::Vector3d(sourcepos[0] + width * perp[0], sourcepos[1] + width * perp[1], -eps));
-            verts.push_back(Eigen::Vector3d(sourcepos[0] - width * perp[0], sourcepos[1] - width * perp[1], -eps));
-            verts.push_back(Eigen::Vector3d(destpos[0] + width * perp[0], destpos[1] + width * perp[1], -eps));
-            verts.push_back(Eigen::Vector3d(destpos[0] - width * perp[0], destpos[1] - width * perp[1], -eps));
-
-            faces.push_back(Eigen::Vector3i(idx, idx + 1, idx + 2));
-            faces.push_back(Eigen::Vector3i(idx + 2, idx + 1, idx + 3));
-            idx += 4;
-
+			idx += nverts;
             break;
         }
         default:
@@ -201,77 +153,30 @@ void GooHook::updateRenderGeometry()
 
     for(int i=0; i<nparticles; i++)
     {
-        double radius = baseradius*sqrt(getTotalParticleMass(i));
-        radius *= (1.0 + pulsefactor*sin(pulsespeed*time_));
+		int nverts = ballV.rows();
+		int nfaces = ballF.rows();
+		Eigen::RowVector3d c=Eigen::RowVector3d(particles_[i].pos[0], particles_[i].pos[1], 0);
+		for (int i = 0; i < nverts; i++)
+		{
+			verts.push_back(c+ (ballV.row(i)-c)*baseradius);
+		}
+		for (int i = 0; i < nfaces; i++)
+		{
+			faces.push_back(ballF.row(i).transpose() + idx * Eigen::Vector3i::Ones());
+		}
 
-        Eigen::Vector3d color(0,0,0);
-
-        if(particles_[i].fixed)
-        {
-            radius = baseradius;
-            color << 1.0, 0, 0;
-        }
-
-        for (int j = 0; j < numcirclewedges + 2; j++)
-        {
-            vertexColors.push_back(color);
-        }
-
-
-        verts.push_back(Eigen::Vector3d(particles_[i].pos[0], particles_[i].pos[1], 0));
-
-        const double PI = 3.1415926535898;
-        for (int j = 0; j <= numcirclewedges; j++)
-        {
-            verts.push_back(Eigen::Vector3d(particles_[i].pos[0] + radius * cos(2 * PI*j / numcirclewedges),
-                particles_[i].pos[1] + radius * sin(2 * PI*j / numcirclewedges), 0));
-        }
-
-        for (int j = 0; j <= numcirclewedges; j++)
-        {
-            faces.push_back(Eigen::Vector3i(idx, idx + j + 1, idx + 1 + ((j + 1) % (numcirclewedges + 1))));
-        }
-
-        idx += numcirclewedges + 2;
+		idx += nverts;
+        
     }
 
-    for(std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
-    {
-        double outerradius = it->radius;
-        double innerradius = (1.0-sawdepth)*outerradius;
-
-        Eigen::Vector3d color(0.5,0.5,0.5);
-
-        int spokes = 2*sawteeth;
-        for (int j = 0; j < spokes + 2; j++)
-        {
-            vertexColors.push_back(color);
-        }
-
-        verts.push_back(Eigen::Vector3d(it->pos[0], it->pos[1], 0));
-
-        const double PI = 3.1415926535898;
-        for (int i = 0; i <= spokes; i++)
-        {
-            double radius = (i % 2 == 0) ? innerradius : outerradius;
-            verts.push_back(Eigen::Vector3d(it->pos[0] + radius * cos(2 * PI*i / spokes + sawangspeed*time_),
-                it->pos[1] + radius * sin(2 * PI*i / spokes + sawangspeed*time_), 0));
-        }
-
-        for (int j = 0; j <= spokes; j++)
-        {
-            faces.push_back(Eigen::Vector3i(idx, idx + j + 1, idx + 1 + ((j + 1) % (spokes + 1))));
-        }
-
-        idx += spokes + 2;
-    }
+    
 
     renderQ.resize(verts.size(),3);
-    renderC.resize(vertexColors.size(), 3);
+    //renderC.resize(vertexColors.size(), 3);
     for (int i = 0; i < verts.size(); i++)
     {
         renderQ.row(i) = verts[i];
-        renderC.row(i) = vertexColors[i];
+        //renderC.row(i) = vertexColors[i];
     }
     renderF.resize(faces.size(), 3);
     for (int i = 0; i < faces.size(); i++)
@@ -286,8 +191,8 @@ void GooHook::initSimulation()
     for(std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
         delete *it;
     connectors_.clear();
-    saws_.clear();
     bendingStencils_.clear();
+	loadMesh();
 }
 
 void GooHook::tick()
@@ -305,11 +210,6 @@ void GooHook::tick()
                 addParticle(mc.x, mc.y);
                 break;
             }
-            case SimParameters::ClickMode::CM_ADDSAW:
-            {
-                addSaw(mc.x, mc.y);
-                break;
-            }
             }
         }
     }
@@ -318,14 +218,11 @@ void GooHook::tick()
 
 bool GooHook::simulateOneStep()
 {
-    // TODO handle constraints and flexible rods
+  
     VectorXd q, v, prevq;
     buildConfiguration(q, v, prevq);
     bool isSucceed = numericalIntegration(q, v, prevq);
     unbuildConfiguration(q, v);
-
-    pruneOverstrainedSprings();
-    deleteSawedObjects();
     time_ += params_.timeStep;
     return (false || !isSucceed);
 }
@@ -351,11 +248,6 @@ void GooHook::addParticle(double x, double y)
         {
             switch(params_.connectorType)
             {
-            case SimParameters::CT_SPRING:
-            {
-                connectors_.push_back(new Spring(newid, i, 0, params_.springStiffness/dist, dist, true));
-                break;
-            }
             case SimParameters::CT_RIGIDROD:
             {
                 connectors_.push_back(new RigidRod(newid, i, 0, dist));
@@ -414,409 +306,29 @@ void GooHook::addParticle(double x, double y)
 
 double GooHook::getTotalParticleMass(int idx)
 {
-    double mass = particles_[idx].mass;
-	// Fixed points are unaffected.
-	if (particles_[idx].fixed)
-		return mass;
-	//Iterate over all possible connectors
-	for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-	{
-		if (idx == (*it)->p1 || idx == (*it)->p2)
-		{
-			mass = mass + (*it)->mass / 2;
-		}
-	}
-    return mass;
-}
-
-void GooHook::addSaw(double x, double y)
-{
-    saws_.push_back(Saw(Vector2d(x,y), params_.sawRadius));
+   
 }
 
 void GooHook::buildConfiguration(VectorXd &q, VectorXd &v, VectorXd &prevq)
 {
-    int ndofs = 2*particles_.size();
-    q.resize(ndofs);
-    v.resize(ndofs);
-	prevq.resize(ndofs);
-
-    for(int i=0; i<(int)particles_.size(); i++)
-    {
-        q.segment<2>(2*i) = particles_[i].pos;
-        v.segment<2>(2*i) = particles_[i].vel;
-		prevq.segment<2>(2 * i) = particles_[i].prevpos;
-    }
-    
-    computeMassInverse(Minv_);
+   
 }
 
 void GooHook::unbuildConfiguration(const VectorXd &q, const VectorXd &v)
 {
-    int ndofs = q.size();
-    assert(ndofs == int(2*particles_.size()));
-
-    for(int i=0; i<ndofs/2; i++)
-    {
-		// Add this line back
-		particles_[i].prevpos = particles_[i].pos;
-        particles_[i].pos = q.segment<2>(2*i);
-        particles_[i].vel = v.segment<2>(2*i);
-    }
+   
 }
 
 int GooHook::getNumRigidRods()
 {
-    int nrods = 0;
-    for(std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-    {
-        if((*it)->getType() == SimParameters::CT_RIGIDROD)
-            nrods++;
-    }
-    return nrods;
+   
 }
 
 bool GooHook::numericalIntegration(VectorXd &q, VectorXd &v, VectorXd &prevq)
 {
-    // TODO handle constraints and flexible rods
-    VectorXd F;
-    SparseMatrix<double> H;
-
-    computeMassInverse(Minv_);
-
-    VectorXd oldq = q;
-    VectorXd oldv = v;
-    bool flag = true;
-    if(params_.constraintHandling == params_.CH_PENALTY)
-    {
-		switch (params_.integrator)
-		{
-		case SimParameters::TI_VELOCITY_VERLET:
-		{
-			updatebyVelocityVerletUnconstraint(q,v);
-			break;
-		}
-		case SimParameters::TI_IMPLICIT_MIDPOINT:
-		{
-			updatebyImpliciyMidpointUnconstraint(q, v, prevq);
-			break;
-		}
-		default:
-			break;
-		}
-    }
-    else if(params_.constraintHandling == params_.CH_STEPPROJECT)
-    {
-        switch (params_.integrator)
-        {
-            case SimParameters::TI_VELOCITY_VERLET:
-            {
-                q += params_.timeStep*v;
-                computeForceAndHessian(q, oldq, F, H);
-                v += params_.timeStep*Minv_*F;
-                break;
-            }
-            case SimParameters::TI_IMPLICIT_MIDPOINT:
-            {
-                
-                // Update by midpoint
-                flag = newtonSolver(q, [this, oldq, prevq, v](Eigen::VectorXd pos, Eigen::VectorXd &F, Eigen::SparseMatrix<double> *gradF)
-                {
-                    Eigen::SparseMatrix<double> idMat(pos.size(), pos.size());
-                    idMat.setIdentity();
-                    Eigen::VectorXd force;
-                    Eigen::SparseMatrix<double> H;
-                    
-                    // H = -gradF
-                    this->computeForceAndHessian((pos + oldq) / 2, (oldq + prevq) / 2, force, H);
-                    
-                    F = pos - oldq - params_.timeStep*v - 0.5*params_.timeStep*params_.timeStep*Minv_*force;
-                    
-                    *gradF = idMat - params_.timeStep * params_.timeStep * Minv_ * (-H) / 4.0;
-                });
-                if(flag)
-                {
-                    v = 2.0 * (q - oldq) / params_.timeStep - v;
-                }
-                else
-                {
-                    std::cout<<"Failed to update by implicit midpoint. Use the volecity verlet to update"<<std::endl;
-                    q += params_.timeStep*v;
-                    computeForceAndHessian(q, oldq, F, H);
-                    v += params_.timeStep*Minv_*F;
-                }
-                break;
-            }
-            default:
-                break;
-        }
-        Eigen::VectorXd curq = q;
-        int nRods = getNumRigidRods();
-        Eigen::VectorXd x(q.size() + nRods);
-        x.setZero();
-        x.topRows(q.size()) = q;
-        
-        Eigen::VectorXd x0 = x;
-        
-        flag = newtonSolver(x, [this, x0](Eigen::VectorXd x, Eigen::VectorXd &F, Eigen::SparseMatrix<double> *gradF)
-                     {
-                         this->computeStepProjection(x, x0, F, gradF);
-                     });
-        if(flag)    // successfully update
-        {
-            q = x.topRows(q.size());
-            v += (q-curq)/params_.timeStep;
-        }
-        else
-        {
-            q = oldq;
-            v = oldv;
-            std::cout<<"Failed to update, please use a smaller time step, current time step is: "<<params_.timeStep<<std::endl;
-        }
-    }
-    else if(params_.constraintHandling == params_.CH_LAGRANGEMULT)
-    {
-        q += params_.timeStep*v;
-        computeForceAndHessian(q, oldq, F, H);
-        Eigen::SparseMatrix<double> gradG;
-        Eigen::VectorXd g,lambda;
-        computeContraintsAndGradient(q, g, &gradG);
-        
-        int nRods = getNumRigidRods();
-        lambda.resize(nRods);
-        lambda.setZero();
-        
-       
-        flag = newtonSolver(lambda, [this, q, v, F](Eigen::VectorXd lambda, Eigen::VectorXd &force, Eigen::SparseMatrix<double> *gradF)
-                            {
-                                this->computeLagrangeMultiple(lambda, q, v, F, force, gradF);
-                            });
-        if(flag)
-        {
-            Eigen::VectorXd g;
-            Eigen::SparseMatrix<double> gradG;
-            computeContraintsAndGradient(q, g, &gradG);
-            v += params_.timeStep*Minv_*(F + gradG.transpose()*lambda);
-        }
-        else
-        {
-            q = oldq;
-            v = oldv;
-            std::cout<<"Failed to update, please use a smaller time step, current time step is: "<<params_.timeStep<<std::endl;
-        }
-    }
-    return flag;
-}
-
-void GooHook::updatebyVelocityVerletUnconstraint(Eigen::VectorXd & q, Eigen::VectorXd & v)
-{
-	SparseMatrix<double> H;
-	VectorXd oldq = q;
-	VectorXd F; 
-	q += params_.timeStep*v;
-	computeForceAndHessian(q, oldq, F, H);
-    std::vector<Eigen::Triplet<double>> penaltyCoeffs;
-    processPenaltyForce(q, oldq, F, penaltyCoeffs);
-	v += params_.timeStep*Minv_*F;
-
-}
-
-void GooHook::updatebyImpliciyMidpointUnconstraint(Eigen::VectorXd & q, Eigen::VectorXd & v, const Eigen::VectorXd prevq)
-{
-	Eigen::VectorXd currentq = q;
-	Eigen::SparseMatrix<double> idMat(q.size(), q.size());
-	idMat.setIdentity();
-	
-
-	for (int i = 0; i < params_.NewtonMaxIters; i++)
-	{
-		Eigen::VectorXd force;
-		Eigen::SparseMatrix<double> H;
-		
-		// H = -gradF
-		computeForceAndHessian((currentq + q) / 2, (q + prevq) / 2, force, H);
-        std::vector<Eigen::Triplet<double>> penaltyCoeffs;
-        processPenaltyForce((currentq + q) / 2, (q + prevq) / 2, force, penaltyCoeffs);
-        SparseMatrix<double> penaltyMat(q.size(), q.size());
-        penaltyMat.setFromTriplets(penaltyCoeffs.begin(), penaltyCoeffs.end());
-        H += penaltyMat;
-
-		Eigen::VectorXd fVal = currentq - q - params_.timeStep*v - 0.5*params_.timeStep*params_.timeStep*Minv_*force;
-
-
-		//std::cout << "Feval: " << fVal.norm() << std::endl;
-		if (fVal.norm() < params_.NewtonTolerance)
-			break;
-
-		Eigen::SparseMatrix<double> gradFVal = idMat - params_.timeStep * params_.timeStep * Minv_ * (-H) / 4.0;
-
-		//Warning: gradF is unsymmetry anymore.
-		Eigen::BiCGSTAB<SparseMatrix<double>, Eigen::IncompleteLUT<double>> solver; 
-		solver.compute(gradFVal);
-
-		Eigen::VectorXd deltaq = solver.solve(-fVal);
-		//std::cout <<"Deltaq: "<< deltaq.norm() << std::endl;
-		currentq = currentq + deltaq;
-	}
-
-	v = 2.0 * (currentq - q) / params_.timeStep - v;
-	q = currentq;
-}
-
-void GooHook::computeLagrangeMultiple(Eigen::VectorXd lambda, Eigen::VectorXd pos, Eigen::VectorXd vel, Eigen::VectorXd regularForce, Eigen::VectorXd &F, Eigen::SparseMatrix<double> *gradF)
-{
-    Eigen::VectorXd newq, newv;
-    Eigen::VectorXd g;
-    Eigen::SparseMatrix<double> gradG;
-    computeContraintsAndGradient(pos, g, &gradG);
-    newv = vel + params_.timeStep*Minv_*(regularForce + gradG.transpose()*lambda);
-    newq = pos + params_.timeStep*newv;
-    if(gradF)
-    {
-        computeContraintsAndGradient(newq, F, gradF);
-        Eigen::SparseMatrix<double> W;
-        W = params_.timeStep * params_.timeStep * Minv_ *gradG.transpose();
-        *gradF = (*gradF) * W;
-    }
-}
-
-void GooHook::computeContraintsAndGradient(const Eigen::VectorXd q, Eigen::VectorXd &g, Eigen::SparseMatrix<double> *gradG)
-{
-    int nConnectors = connectors_.size();
-    int nRods = getNumRigidRods();
-    g.resize(nRods);
-    g.setZero();
-    
-    std::vector<Eigen::Triplet<double> > dgTriplet;
-    int rodIdx = 0;
-    
-    for(int i=0;i<nConnectors;i++)
-    {
-        if(connectors_[i]->getType() != SimParameters::CT_RIGIDROD)
-            continue;
-        auto rod = *(RigidRod *)connectors_[i];
-        Eigen::Vector2d p1 = q.segment<2>(2*rod.p1);
-        Eigen::Vector2d p2 = q.segment<2>(2*rod.p2);
-        
-        g(rodIdx) = (p1-p2).squaredNorm() - rod.length*rod.length;
-        
-        if(gradG)
-        {
-            Eigen::Vector2d localF = 2*(p1-p2);
-            
-            dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2*rod.p1, localF(0)));
-            dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2*rod.p1 + 1, localF(1)));
-            dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2*rod.p2, -localF(0)));
-            dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2*rod.p2 + 1, -localF(1)));
-        }
-        rodIdx ++;
-    }
-    if(gradG)
-    {
-        gradG->resize(nRods, q.size());
-        gradG->setFromTriplets(dgTriplet.begin(), dgTriplet.end());
-    }
-}
-
-
-void GooHook::computeStepProjection(Eigen::VectorXd x, Eigen::VectorXd x0, Eigen::VectorXd &F, Eigen::SparseMatrix<double> *gradF)
-{
-    int rodIdx = 0;
-    int nParticles = particles_.size();
-    int nConnectors = connectors_.size();
-    int nRods = x0.size() - 2*nParticles;
-    Eigen::VectorXd g(nRods);
-    Eigen::VectorXd f(2*nParticles), dg(2*nParticles);
-    f = x.topRows(2*nParticles) - x0.topRows(2*nParticles);
-    dg.setZero();
-    
-    std::vector<Eigen::Triplet<double> > mInvTriplet, liftTriplet, IdgTriplet;
-    
-    for(int i=0; i<nParticles; i++)
-    {
-        liftTriplet.push_back(Eigen::Triplet<double>(2*i, 2*i, 1));
-        liftTriplet.push_back(Eigen::Triplet<double>(2*i + 1, 2*i + 1, 1));
-       
-        IdgTriplet.push_back(Eigen::Triplet<double>(2*i, 2*i, 1));
-        IdgTriplet.push_back(Eigen::Triplet<double>(2*i + 1, 2*i + 1, 1));
-    }
-    
-    for(int i = 0; i<nConnectors; i++)
-    {
-        if(connectors_[i]->getType() != SimParameters::CT_RIGIDROD)
-            continue;
-        auto rod = *(RigidRod *)connectors_[i];
-        Eigen::Vector2d p1 = x.segment<2>(2*rod.p1);
-        Eigen::Vector2d p2 = x.segment<2>(2*rod.p2);
-        
-        Eigen::Vector2d localF = 2*(p1-p2);
-        
-        mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p1, 2*nParticles + rodIdx, localF(0)));
-        mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p1 + 1, 2*nParticles + rodIdx, localF(1)));
-        mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p2, 2*nParticles + rodIdx, -localF(0)));
-        mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p2 + 1, 2*nParticles + rodIdx, -localF(1)));
-        
-        IdgTriplet.push_back(Eigen::Triplet<double>(2*nParticles + rodIdx, 2*rod.p1, localF(0)));
-        IdgTriplet.push_back(Eigen::Triplet<double>(2*nParticles + rodIdx, 2*rod.p1 + 1, localF(1)));
-        IdgTriplet.push_back(Eigen::Triplet<double>(2*nParticles + rodIdx, 2*rod.p2, -localF(0)));
-        IdgTriplet.push_back(Eigen::Triplet<double>(2*nParticles + rodIdx, 2*rod.p2 + 1, -localF(1)));
-        
-        
-        dg.segment<2>(2*rod.p1) += x(2*nParticles + rodIdx) * localF;
-        dg.segment<2>(2*rod.p2) += -x(2*nParticles + rodIdx) * localF;
-        
-        g(rodIdx) = (p1-p2).squaredNorm() - rod.length*rod.length;
-        
-        Eigen::Matrix2d localH;
-        localH.setIdentity();
-        localH = 2*localH;
-        
-        for(int j=0; j<2; j++)
-            for(int k=0; k<2;k++)
-            {
-                mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p1+j, 2*rod.p1+k, x(2*nParticles + rodIdx)* localH.coeff(j,k)));
-                mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p2+j, 2*rod.p2+k, x(2*nParticles + rodIdx) * localH.coeff(j,k)));
-                mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p1+j, 2*rod.p2+k, -x(2*nParticles + rodIdx)*localH.coeff(j,k)));
-                mInvTriplet.push_back(Eigen::Triplet<double>(2*rod.p2+j, 2*rod.p1+k, -x(2*nParticles + rodIdx)*localH.coeff(j,k)));
-            }
-        
-        
-        rodIdx++;
-    }
-//    std::cout<<"lambda*dg"<<std::endl;
-//    std::cout<<dg<<std::endl<<std::endl;
-//
-//    std::cout<<"f"<<std::endl;
-    f += Minv_ * dg;
-//    std::cout<<f<<std::endl;
-    
-    F.resize(x.size());
-    F.topRows(2*nParticles) = f;
-    F.bottomRows(nRods) = g;
-    
-    if(gradF == NULL)
-        return;
-    
-    gradF->resize(x.size(), x.size());
-    gradF->setZero();
-    
-    SparseMatrix<double> liftMat(x.size(), 2*nParticles);
-    liftMat.setFromTriplets(liftTriplet.begin(), liftTriplet.end());
-    
-    SparseMatrix<double> IdgMat(x.size(),x.size());
-    IdgMat.setFromTriplets(IdgTriplet.begin(), IdgTriplet.end());
-    
-    SparseMatrix<double> mInvMat(2*nParticles, x.size());
-    mInvMat.setFromTriplets(mInvTriplet.begin(), mInvTriplet.end());
-
-//    std::cout<<"[lambda * H, dg]"<<std::endl;
-//    std::cout<<mInvMat.toDense()<<std::endl<<std::endl;
-    *gradF = IdgMat + liftMat * Minv_ * mInvMat;
-//    std::cout<<"Grad F"<<std::endl;
-//    std::cout<<gradF.toDense()<<std::endl<<std::endl;
-    
     
 }
+
 
 bool GooHook::newtonSolver(Eigen::VectorXd &x, std::function<void (Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeFAndGradF)
 {
@@ -896,182 +408,32 @@ bool GooHook::takeOneStep(double &ratio, Eigen::VectorXd &x, std::function<void 
         return false;
 }
 
-void GooHook::computeMassInverse(Eigen::SparseMatrix<double> &Minv)
-{
-    int ndofs = 2*int(particles_.size());
-
-    Minv.resize(ndofs, ndofs);
-    Minv.setZero();
-
-    std::vector<Eigen::Triplet<double> > Minvcoeffs;
-    for(int i=0; i<ndofs/2; i++)
-    {
-        Minvcoeffs.push_back(Eigen::Triplet<double>(2*i,   2*i,   1.0/getTotalParticleMass(i)));
-        Minvcoeffs.push_back(Eigen::Triplet<double>(2*i+1, 2*i+1, 1.0/getTotalParticleMass(i)));
-    }
-
-    Minv.setFromTriplets(Minvcoeffs.begin(), Minvcoeffs.end());
-}
 
 void GooHook::computeForceAndHessian(const VectorXd &q, const VectorXd &qprev, Eigen::VectorXd &F, SparseMatrix<double> &H)
 {
-    F.resize(q.size());
-    F.setZero();
-    H.resize(q.size(), q.size());
-    H.setZero();
-
-    std::vector<Eigen::Triplet<double> > Hcoeffs;
-    if(params_.gravityEnabled)
-        processGravityForce(F);
-    if(params_.springsEnabled)
-        processSpringForce(q, F, Hcoeffs);
-    if(params_.dampingEnabled)
-        processDampingForce(q, qprev, F, Hcoeffs);
-    if(params_.floorEnabled)
-        processFloorForce(q, qprev, F, Hcoeffs);
-    if(params_.bendingEnabled)
-        processBendingForce(q, qprev, F, Hcoeffs);
-    H.setFromTriplets(Hcoeffs.begin(), Hcoeffs.end());
 }
 
 void GooHook::processGravityForce(VectorXd &F)
 {
-    int nparticles = (int)particles_.size();
-    for(int i=0; i<nparticles; i++)
-    {
-        if(!particles_[i].fixed)
-        {
-            F[2*i+1] += params_.gravityG*getTotalParticleMass(i);
-        }
-    }
 }
 
 void GooHook::processSpringForce(const Eigen::VectorXd &q, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
 {
-    int nsprings = (int)connectors_.size();
-
-    for(int i=0; i<nsprings; i++)
-    {
-        if(connectors_[i]->getType() != SimParameters::CT_SPRING)
-            continue;
-        Spring &s = *(Spring *)connectors_[i];
-        Vector2d p1 = q.segment<2>(2*s.p1);
-        Vector2d p2 = q.segment<2>(2*s.p2);
-        double dist = (p2-p1).norm();
-        Vector2d localF = s.stiffness*(dist-s.restlen)/dist * (p2-p1);
-        F.segment<2>(2*s.p1) += localF;
-        F.segment<2>(2*s.p2) -= localF;
-
-        Matrix2d I;
-        I << 1, 0, 0, 1;
-        Matrix2d localH = s.stiffness * (1.0 - s.restlen/dist)*I;
-        localH += s.stiffness*s.restlen*(p2-p1)*(p2-p1).transpose()/dist/dist/dist;
-
-        for(int j=0; j<2; j++)
-            for(int k=0; k<2;k++)
-            {
-                H.push_back(Eigen::Triplet<double>(2*s.p1+j, 2*s.p1+k, localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p2+j, 2*s.p2+k, localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p1+j, 2*s.p2+k, -localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p2+j, 2*s.p1+k, -localH.coeff(j,k)));
-            }
-    }
+ 
 }
 
 void GooHook::processDampingForce(const VectorXd &q, const VectorXd &qprev, VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
 {
-    int nsprings = (int)connectors_.size();
-
-    for(int i=0; i<nsprings; i++)
-    {
-        if(connectors_[i]->getType() != SimParameters::CT_SPRING)
-            continue;
-        Spring &s = *(Spring *)connectors_[i];
-        Vector2d p1 = q.segment<2>(2*s.p1);
-        Vector2d p2 = q.segment<2>(2*s.p2);
-        Vector2d p1prev = qprev.segment<2>(2*s.p1);
-        Vector2d p2prev = qprev.segment<2>(2*s.p2);
-
-        Vector2d relvel = (p2 - p2prev)/params_.timeStep - (p1 - p1prev)/params_.timeStep;
-        Vector2d localF = params_.dampingStiffness*relvel;
-        F.segment<2>(2*s.p1) += localF;
-        F.segment<2>(2*s.p2) -= localF;
-
-        Matrix2d I;
-        I << 1, 0, 0, 1;
-        Matrix2d localH = params_.dampingStiffness*I/params_.timeStep;
-
-        for(int j=0; j<2; j++)
-            for(int k=0; k<2;k++)
-            {
-                H.push_back(Eigen::Triplet<double>(2*s.p1+j, 2*s.p1+k, localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p2+j, 2*s.p2+k, localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p1+j, 2*s.p2+k, -localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p2+j, 2*s.p1+k, -localH.coeff(j,k)));
-            }
-    }
+ 
 }
 
 void GooHook::processFloorForce(const VectorXd &q, const VectorXd &qprev, VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
 {
-    int nparticles = particles_.size();
-
-    double basestiffness = 10000;
-    double basedrag = 1000.0;
-	double baseradius = 0.02;
-
-    for(int i=0; i<nparticles; i++)
-    {
-		// Make the simulation more makes sense
-		double radius = baseradius*sqrt(getTotalParticleMass(i));
-        if(q[2*i+1] < -0.5+radius && ! particles_[i].fixed)
-        {
-            double vel = (q[2*i+1]-qprev[2*i+1])/params_.timeStep;
-            double dist = -0.5+ radius - q[2*i+1];
-
-            F[2*i+1] += basestiffness*dist - basedrag*dist*vel;
-
-            H.push_back(Eigen::Triplet<double>(2*i+1, 2*i+1, basestiffness
-                - 0.5*basedrag/params_.timeStep
-                + basedrag*qprev[2*i+1]/params_.timeStep
-                - 2.0*basedrag*q[2*i+1]/params_.timeStep));
-        }
-    }
 }
 
 void GooHook::processPenaltyForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
 {
-    int nConnects = connectors_.size();
     
-    for(int i=0;i<nConnects;i++)
-    {
-        if(connectors_[i]->getType() != SimParameters::CT_RIGIDROD)
-            continue;
-        RigidRod &s = *(RigidRod *)connectors_[i];
-        Vector2d p1 = q.segment<2>(2*s.p1);
-        Vector2d p2 = q.segment<2>(2*s.p2);
-        double squaredDist = (p2-p1).squaredNorm();
-        Vector2d localF = -4 * params_.penaltyStiffness * (squaredDist - s.length*s.length)*(p1-p2);
-        F.segment<2>(2*s.p1) += localF;
-        F.segment<2>(2*s.p2) -= localF;
-        
-        Matrix2d I;
-        I << 1,0,0,1;
-        
-        // H = -dF
-        Eigen::Matrix2d localH = 4*params_.penaltyStiffness*(squaredDist-s.length*s.length)*I + 8*params_.penaltyStiffness*(p1-p2)*(p1-p2).transpose();
-        
-        for(int j=0; j<2; j++)
-            for(int k=0; k<2;k++)
-            {
-                H.push_back(Eigen::Triplet<double>(2*s.p1+j, 2*s.p1+k, localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p2+j, 2*s.p2+k, localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p1+j, 2*s.p2+k, -localH.coeff(j,k)));
-                H.push_back(Eigen::Triplet<double>(2*s.p2+j, 2*s.p1+k, -localH.coeff(j,k)));
-            }
-        
-        
-    }
 }
 
 void GooHook::processBendingForce(const Eigen::VectorXd & q, const Eigen::VectorXd & qprev, Eigen::VectorXd & F, std::vector<Eigen::Triplet<double>>& H)
@@ -1171,202 +533,6 @@ void GooHook::processBendingForce(const Eigen::VectorXd & q, const Eigen::Vector
 	}
 }
 
-double GooHook::ptSegmentDist(const Vector2d &p, const Vector2d &q1, const Vector2d &q2)
-{
-    double t = (p-q1).dot(q2-q1) / (q2-q1).dot(q2-q1);
-    double linedistsq = (q1 + t*(q2-q1) - p).squaredNorm();
-    double q1dist = (p-q1).squaredNorm();
-    double q2dist = (p-q2).squaredNorm();
-    double mindistsq = std::min(linedistsq, std::min(q1dist, q2dist));
-    return sqrt(mindistsq);
-}
-
-void GooHook::detectSawedConnectors(std::set<int> &connectorsToDelete)
-{
-    for(int i=0; i<(int)connectors_.size(); i++)
-    {
-        Vector2d pos1 = particles_[connectors_[i]->p1].pos;
-        Vector2d pos2 = particles_[connectors_[i]->p2].pos;
-        double maxx = std::max(pos1[0], pos2[0]);
-        double minx = std::min(pos1[0], pos2[0]);
-        double maxy = std::max(pos1[1], pos2[1]);
-        double miny = std::min(pos1[1], pos2[1]);
-        for(std::vector<Saw>::iterator saw = saws_.begin(); saw != saws_.end(); ++saw)
-        {
-            Vector2d sawpos = saw->pos;
-            double sawr = saw->radius;
-
-            if(sawpos[0] - sawr > maxx || sawpos[0] + sawr < minx || sawpos[1] - sawr > maxy || sawpos[1] + sawr < miny)
-                continue;
-
-            double sawspringdist = ptSegmentDist(sawpos, pos1, pos2);
-            if(sawspringdist <= sawr)
-            {
-                connectorsToDelete.insert(i);
-                break;
-            }
-        }
-    }
-}
-
-void GooHook::detectSawedParticles(std::set<int> &particlesToDelete)
-{
-    for(int i=0; i<(int)particles_.size(); i++)
-    {
-        Vector2d partpos = particles_[i].pos;
-
-        if(!(fabs(partpos[0]) < 2 && fabs(partpos[1]) < 2))
-        {
-            particlesToDelete.insert(i);
-            break;
-        }
-
-        for(std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
-        {
-            Vector2d sawpos = it->pos;
-            double sqdist = (sawpos-partpos).squaredNorm();
-            if(sqdist < it->radius*it->radius)
-            {
-                particlesToDelete.insert(i);
-                break;
-            }
-        }
-    }
-}
-
-void GooHook::deleteSawedObjects()
-{
-    std::set<int> particlestodelete;
-    std::set<int> connectorstodelete;
-    std::set<int> bendingtodelete;
-    detectSawedParticles(particlestodelete);
-    detectSawedConnectors(connectorstodelete);
-
-    std::vector<Particle, Eigen::aligned_allocator<Particle>> newparticles;
-    std::vector<Connector *> newconnectors;
-    std::vector<BendingStencil> newbending;
-    std::vector<int> remainingparticlemap;
-    std::vector<int> remainingbendingmap;
-
-    if(!particlestodelete.empty())
-    {
-        for(int i=0; i<(int)connectors_.size(); i++)
-        {
-            if(particlestodelete.count(connectors_[i]->p1) || particlestodelete.count(connectors_[i]->p2))
-                connectorstodelete.insert(i);
-        }
-
-        for(int i=0; i<(int)particles_.size(); i++)
-        {
-            if(particlestodelete.count(i) == 0)
-            {
-                remainingparticlemap.push_back(newparticles.size());
-                newparticles.push_back(particles_[i]);
-            }
-            else
-                remainingparticlemap.push_back(-1);
-        }
-    }
-    if(!connectorstodelete.empty())
-    {
-        for(std::set<int>::iterator it = connectorstodelete.begin(); it != connectorstodelete.end(); ++it)
-        {
-            for(std::set<int>::iterator bit = connectors_[*it]->associatedBendingStencils.begin(); bit != connectors_[*it]->associatedBendingStencils.end(); ++bit)
-            {
-                bendingtodelete.insert(*bit);
-            }
-        }
-        for(int i=0; i<(int)connectors_.size(); i++)
-        {
-            if(connectorstodelete.count(i) == 0)
-            {
-                newconnectors.push_back(connectors_[i]);
-            }
-            else
-                delete connectors_[i];
-        }
-    }
-    if(!bendingtodelete.empty())
-    {
-        int newidx=0;
-        for(int i=0; i<(int)bendingStencils_.size(); i++)
-        {
-            if(bendingtodelete.count(i) == 0)
-            {
-                newbending.push_back(bendingStencils_[i]);
-                remainingbendingmap.push_back(newidx++);
-            }
-            else
-                remainingbendingmap.push_back(-1);
-        }
-    }
-
-    if (!connectorstodelete.empty() || !particlestodelete.empty())
-    {
-        if (!connectorstodelete.empty())
-            connectors_ = newconnectors;
-        if (!bendingtodelete.empty())
-        {
-            bendingStencils_ = newbending;
-            for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-            {
-                std::set<int> newass;
-                for (std::set<int>::iterator sit = (*it)->associatedBendingStencils.begin(); sit != (*it)->associatedBendingStencils.end(); ++sit)
-                {
-                    if (bendingtodelete.count(*sit) == 0)
-                        newass.insert(remainingbendingmap[*sit]);
-                }
-                (*it)->associatedBendingStencils = newass;
-            }
-        }
-        if (!particlestodelete.empty())
-        {
-            particles_ = newparticles;
-            for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-            {
-                (*it)->p1 = remainingparticlemap[(*it)->p1];
-                (*it)->p2 = remainingparticlemap[(*it)->p2];
-            }
-            for (std::vector<BendingStencil>::iterator it = bendingStencils_.begin(); it != bendingStencils_.end(); ++it)
-            {
-                it->p1 = remainingparticlemap[it->p1];
-                it->p2 = remainingparticlemap[it->p2];
-                it->p3 = remainingparticlemap[it->p3];
-            }
-        }
-    }
-}
-
-void GooHook::pruneOverstrainedSprings()
-{
-    int nsprings = connectors_.size();
-
-    std::vector<int> toremove;
-    for (int i = 0; i < nsprings; i++)
-    {
-        if (connectors_[i]->getType() != SimParameters::CT_SPRING)
-            continue;
-
-        Spring &s = *(Spring *)connectors_[i];
-        if (s.canSnap)
-        {
-            Vector2d srcpos = particles_[s.p1].pos;
-            Vector2d dstpos = particles_[s.p2].pos;
-            double dist = (dstpos - srcpos).norm();
-
-            double strain = (dist - s.restlen) / s.restlen;
-            if (strain > params_.maxSpringStrain)
-                toremove.push_back(i);
-        }
-    }
-
-    for (std::vector<int>::reverse_iterator it = toremove.rbegin(); it != toremove.rend(); ++it)
-    {
-        assert(connectors_[*it]->associatedBendingStencils.empty());
-        delete connectors_[*it];
-        connectors_.erase(connectors_.begin() + *it);
-    }
-}
 
 
 
@@ -1418,148 +584,35 @@ void GooHook::testForceDifferential()
 	}
 }
 
-void GooHook::testStepProjection()
+
+
+
+void GooHook::loadMesh()
 {
-    Eigen::VectorXd q, vel, qPrev;
-    buildConfiguration(q, vel, qPrev);
-    qPrev.resize(q.size());
-    for (int i = 0; i<(int)particles_.size(); i++)
-    {
-        qPrev.segment<2>(2 * i) = particles_[i].prevpos;
-    }
-    
+	std::string prefix;
+	std::string meshFilename = std::string("meshes/sphere.obj");
+	std::ifstream ifs(meshFilename);
+	if (!ifs)
+	{
+		// run from the build directory?
+		prefix = "../";
+		meshFilename = prefix + meshFilename;
+		ifs.open(meshFilename);
+		if (!ifs)
+		{
+			prefix = "../";
+			meshFilename = prefix + meshFilename;
+			ifs.open(meshFilename);
+			prefix = "../../";
+			if (!ifs)
+				return;
+		}
+	}
 
-    int nRods = getNumRigidRods();
-
-
-    Eigen::VectorXd x(q.size() + nRods);
-    x.setOnes();
-    x.topRows(q.size()) = q;
-    
-    Eigen::VectorXd x0 = x;
-    
-    Eigen::SparseMatrix<double> gradF(x.size(), x.size());
-    gradF.setZero();
-    Eigen::VectorXd f = Eigen::VectorXd::Zero(x.size());
-
-    computeStepProjection(x, x0, f, &gradF);
-
-    Eigen::VectorXd direction = Eigen::VectorXd::Random(x.size());
-    
-    for(int i=0;i<particles_.size();i++)
-    {
-        if(particles_[i].fixed)
-            direction.segment(2*i, 2).setZero();
-    }
-    
-
-    direction.normalize();
-    std::cout<<direction<<std::endl;
-    for (int k = 1; k <= 12; k++)
-    {
-        double eps = pow(10, -k);
-        
-        VectorXd epsF = Eigen::VectorXd::Zero(x.size());
-        Eigen::SparseMatrix<double>  epsgradF(x.size(), x.size());
-        computeStepProjection(x+eps*direction, x0, epsF, &epsgradF);
-        
-        std::cout << "EPS is: " << eps << std::endl;
-        std::cout << "Norm of Finite Difference is: " << (epsF - f).norm() / eps << std::endl;
-        std::cout << "Norm of Directinal Gradient is: " << (gradF*direction).norm() << std::endl;
-        std::cout << "The difference between above two is: " << ((epsF - f) / eps - gradF*direction).norm() << std::endl << std::endl;
-
-    }
-}
-
-void GooHook::testLagrangeMultiple()
-{
-    Eigen::VectorXd q, vel, qPrev;
-    buildConfiguration(q, vel, qPrev);
-    qPrev.resize(q.size());
-    for (int i = 0; i<(int)particles_.size(); i++)
-    {
-        qPrev.segment<2>(2 * i) = particles_[i].prevpos;
-    }
-    
-    Eigen::VectorXd F;
-    Eigen::SparseMatrix<double> H;
-    
-    q += params_.timeStep * vel;
-    computeForceAndHessian(q, qPrev, F, H);
-    int nRods = getNumRigidRods();
-    
-    
-    Eigen::VectorXd lambda = Eigen::VectorXd::Random(nRods);
-    
-    Eigen::SparseMatrix<double> gradF(lambda.size(), lambda.size());
-    gradF.setZero();
-    Eigen::VectorXd f = Eigen::VectorXd::Zero(lambda.size());
-    
-    computeLagrangeMultiple(lambda, q, vel, F, f, &gradF);
-    
-    Eigen::VectorXd direction = Eigen::VectorXd::Random(lambda.size());
-    
-    
-    direction.normalize();
-    std::cout<<direction<<std::endl;
-    for (int k = 1; k <= 12; k++)
-    {
-        double eps = pow(10, -k);
-        
-        VectorXd epsF = Eigen::VectorXd::Zero(lambda.size());
-        Eigen::SparseMatrix<double>  epsgradF(lambda.size(), lambda.size());
-        computeLagrangeMultiple(lambda+eps*direction, q, vel, F, epsF, &epsgradF);
-        
-        std::cout << "EPS is: " << eps << std::endl;
-        std::cout << "Norm of Finite Difference is: " << (epsF - f).norm() / eps << std::endl;
-        std::cout << "Norm of Directinal Gradient is: " << (gradF*direction).norm() << std::endl;
-        std::cout << "The difference between above two is: " << ((epsF - f) / eps - gradF*direction).norm() << std::endl << std::endl;
-        
-    }
-}
-
-void GooHook::testConstriantAndGradient()
-{
-    Eigen::VectorXd q, vel, qPrev;
-    buildConfiguration(q, vel, qPrev);
-    qPrev.resize(q.size());
-    for (int i = 0; i<(int)particles_.size(); i++)
-    {
-        qPrev.segment<2>(2 * i) = particles_[i].prevpos;
-    }
-    
-    
-    int nRods = getNumRigidRods();
-    
-    Eigen::VectorXd g;
-    Eigen::SparseMatrix<double> gradG;
-    computeContraintsAndGradient(q, g, &gradG);
-    
-    Eigen::VectorXd direction = Eigen::VectorXd::Random(q.size());
-    
-    for(int i=0;i<particles_.size();i++)
-    {
-        if(particles_[i].fixed)
-            direction.segment(2*i, 2).setZero();
-    }
-    
-    
-    direction.normalize();
-    std::cout<<direction<<std::endl;
-    for (int k = 1; k <= 12; k++)
-    {
-        double eps = pow(10, -k);
-        
-        VectorXd epsF;
-        Eigen::SparseMatrix<double>  epsgradF;
-        computeContraintsAndGradient(q+eps*direction, epsF, &epsgradF);
-        
-        std::cout << "EPS is: " << eps << std::endl;
-        std::cout << "Norm of Finite Difference is: " << (epsF - g).norm() / eps << std::endl;
-        std::cout << "Norm of Directinal Gradient is: " << (gradG*direction).norm() << std::endl;
-        std::cout << "The difference between above two is: " << ((epsF - g) / eps - gradG*direction).norm() << std::endl << std::endl;
-        
-    }
+	igl::readOBJ(meshFilename, ballV, ballF);
+	meshFilename = prefix + std::string("meshes/box.obj");
+	igl::readOBJ(meshFilename, rodV, rodF);
+	std::cout << "Initialize Complete!\n";
 }
 
 void GooHook::saveConfiguration(std::string filePath)

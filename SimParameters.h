@@ -15,17 +15,18 @@ struct SimParameters
         gravityEnabled = true;
         gravityG = -9.8;
         springsEnabled = true;
-        springStiffness = 100;
-        maxSpringStrain = 0.2;
-        dampingEnabled = true;
-        dampingStiffness = 1.0;
+        //springStiffness = 100;
+        //maxSpringStrain = 0.2;
+        //dampingEnabled = true;
+        //dampingStiffness = 1.0;
         floorEnabled = true;
         bendingEnabled = true;
+		twistEnabled = true;
 
         clickMode = CM_ADDPARTICLE;
-        connectorType = CT_SPRING;
+        connectorType = CT_FLEXROD;
         particleMass = 1.0;
-        maxSpringDist = 0.25;
+        maxSpringDist = 1e5;
         particleFixed = false;
 
         rodDensity = 2;
@@ -33,7 +34,7 @@ struct SimParameters
         rodBendingStiffness = 0.05;
         rodSegments = 5;
 
-        sawRadius= 0.1;
+        //sawRadius= 0.1;
     }
 
     enum ClickMode {CM_ADDPARTICLE, CM_ADDSAW};
@@ -53,22 +54,24 @@ struct SimParameters
     double gravityG;
     bool springsEnabled;
     bool bendingEnabled;
-    double springStiffness;
-    double maxSpringStrain;
+	bool twistEnabled;
+    //double springStiffness;
+    //double maxSpringStrain;
     bool floorEnabled;
-    bool dampingEnabled;
-    double dampingStiffness;
+    //bool dampingEnabled;
+    //double dampingStiffness;
 
     ClickMode clickMode;
     ConnectorType connectorType;
     double particleMass;
     double maxSpringDist;
     bool particleFixed;
-    double sawRadius;
+    //double sawRadius;
 
     double rodDensity;
     double rodBendingStiffness;
     double rodStretchingStiffness;
+	double rodTwistStiffness;
     int rodSegments;
 };
 
