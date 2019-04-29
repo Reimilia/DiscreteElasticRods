@@ -68,6 +68,24 @@ public:
     double length;
 };
 
+struct ElasticRod : public Connector
+{
+public:
+	ElasticRod(int p1, int p2, double mass, double length, Eigen::Vector3d u, Eigen::Vector3d v, Eigen::Vector3d theta) 
+		: Connector(p1, p2, mass), length(length), u(u), v(v), theta(theta) {}
+
+	virtual SimParameters::ConnectorType getType()
+	{
+		return SimParameters::CT_ELASTICROD;
+	}
+
+	double length;
+	// Bishop Frame of an Elastic Rod
+	Eigen::Vector3d u, v, theta;
+};
+
+
+
 struct Saw
 {
 public:

@@ -41,7 +41,7 @@ struct SimParameters
 
     enum ConstraintHandling {CH_PENALTY, CH_STEPPROJECT, CH_LAGRANGEMULT};
 	enum TimeIntegrator {TI_VELOCITY_VERLET, TI_IMPLICIT_MIDPOINT};
-    enum ConnectorType {CT_SPRING, CT_RIGIDROD, CT_FLEXROD};
+    enum ConnectorType {CT_FLEXROD, CT_SPRING, CT_RIGIDROD, CT_ELASTICROD};
 
     ConstraintHandling constraintHandling;
 	TimeIntegrator integrator;

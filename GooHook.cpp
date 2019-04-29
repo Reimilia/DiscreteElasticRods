@@ -73,9 +73,9 @@ void GooHook::updateRenderGeometry()
     double pulsefactor = 0.1;
     double pulsespeed = 50.0;
 
-    int sawteeth = 20;
-    double sawdepth = 0.1;
-    double sawangspeed = 10.0;
+    //int sawteeth = 20;
+    //double sawdepth = 0.1;
+    //double sawangspeed = 10.0;
 
     double baselinewidth = 0.005;
 
@@ -120,12 +120,13 @@ void GooHook::updateRenderGeometry()
         {
         case SimParameters::CT_SPRING:
 		case SimParameters::CT_RIGIDROD:
+		case SimParameters::CT_ELASTICROD:
 		{
 			Vector2d sourcepos = particles_[(*it)->p1].pos;
 			Vector2d destpos = particles_[(*it)->p2].pos;
 
 			Vector2d vec = destpos - sourcepos;
-			double width = vec.norm();
+			Vector3d width = Eigen::Vector3d(vec.norm(),0.08,0.10);
 			Eigen::Vector3d c = Eigen::Vector3d((sourcepos[0] + destpos[0]) / 2.0, (sourcepos[1] + destpos[1]) / 2.0, 0);
 			Eigen::Vector3d rot = Eigen::Vector3d(0, 0, std::atan2(vec[1],vec[0]));
 
@@ -133,7 +134,7 @@ void GooHook::updateRenderGeometry()
 			int nfaces = rodF.rows();
 			for (int i = 0; i < nverts; i++)
 			{
-				Eigen::Vector3d pos = c + basescale * width * VectorMath::rotationMatrix(rot) * rodV.row(i).transpose();
+				Eigen::Vector3d pos = c + basescale * VectorMath::rotationMatrix(rot) * width.cwiseProduct(rodV.row(i).transpose());
 				verts.push_back(pos);
 			}
 			for (int i = 0; i < nfaces; i++)
@@ -306,7 +307,7 @@ void GooHook::addParticle(double x, double y)
 
 double GooHook::getTotalParticleMass(int idx)
 {
-   
+	return 0.0;
 }
 
 void GooHook::buildConfiguration(VectorXd &q, VectorXd &v, VectorXd &prevq)
@@ -321,12 +322,12 @@ void GooHook::unbuildConfiguration(const VectorXd &q, const VectorXd &v)
 
 int GooHook::getNumRigidRods()
 {
-   
+	return 0;
 }
 
 bool GooHook::numericalIntegration(VectorXd &q, VectorXd &v, VectorXd &prevq)
 {
-    
+	return false;
 }
 
 

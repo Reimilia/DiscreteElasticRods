@@ -91,6 +91,10 @@ private:
     double getTotalParticleMass(int idx);
     int getNumRigidRods();
 
+	void updateQuasiStaticFrame();
+	void updateBishopFrame();
+
+
 	void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &v, Eigen::VectorXd &qprev);
     void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &v);
 
