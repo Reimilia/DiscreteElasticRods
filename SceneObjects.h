@@ -68,22 +68,28 @@ public:
     double length;
 };
 
-struct ElasticRod : public Connector
+
+struct ElasticRodSegment : public Connector
 {
 public:
-	ElasticRod(int p1, int p2, double mass, double length, Eigen::Vector3d u, Eigen::Vector3d v, Eigen::Vector3d theta) 
-		: Connector(p1, p2, mass), length(length), u(u), v(v), theta(theta) {}
+	ElasticRodSegment(int p1, int p2, double mass, double length) : Connector(p1, p2, mass), lambda(0), length(length) {}
 
 	virtual SimParameters::ConnectorType getType()
 	{
 		return SimParameters::CT_ELASTICROD;
 	}
 
+	double lambda;
 	double length;
-	// Bishop Frame of an Elastic Rod
-	Eigen::Vector3d u, v, theta;
+	// Bishop frame of the Segment
+	// They are defined via the parallel transport
+	// t always point to the tangent direction
+	Eigen::Vector3d u, v, t;
+	// How many degree is twisted compared to the material frame.
+	double theta;
+	// Centerline curvature
+	Eigen::Vector2d curvature;
 };
-
 
 
 struct Saw

@@ -36,14 +36,35 @@ bool drawCallback(igl::opengl::glfw::Viewer &viewer)
     return false;
 }
 
-bool keyCallback(igl::opengl::glfw::Viewer& viewer, unsigned int key, int modifiers)
+
+bool keyCallback(igl::opengl::glfw::Viewer &viewer, unsigned int key, int modifiers)
 {
-    if (key == ' ')
-    {
-        toggleSimulation();
-        return true;
-    }
-    return false;
+	if (key == ' ')
+	{
+		toggleSimulation();
+		return true;
+	}
+	Eigen::Vector4f look4 = viewer.core.view.inverse() * Eigen::Vector4f(0, 0, 1.0, 0.0);
+	Eigen::Vector4f left4 = viewer.core.view.inverse() * Eigen::Vector4f(1.0, 0.0, 0.0, 0.0);
+	Eigen::Vector3f look(look4[0], look4[1], look4[2]);
+	Eigen::Vector3f left(left4[0], left4[1], left4[2]);
+	if (key == 'w')
+	{
+		viewer.core.camera_base_translation += look;
+	}
+	if (key == 's')
+	{
+		viewer.core.camera_base_translation -= look;
+	}
+	if (key == 'a')
+	{
+		viewer.core.camera_base_translation += left;
+	}
+	if (key == 'd')
+	{
+		viewer.core.camera_base_translation -= left;
+	}
+	return false;
 }
 
 bool mouseCallback(igl::opengl::glfw::Viewer& viewer, int button, int modifier)

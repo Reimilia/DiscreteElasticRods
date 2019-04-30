@@ -1,0 +1,57 @@
+#include "ElasticRod.h"
+
+
+ElasticRod::ElasticRod(int numSegments, Eigen::Vector3d st, Eigen::Vector3d ed)
+{
+	// TODO: precompute omega
+}
+
+ElasticRod::~ElasticRod()
+{
+}
+
+void ElasticRod::buildconfiguration(Eigen::VectorXd & pos, Eigen::VectorXd & theta, Eigen::VectorXd & vel)
+{
+}
+
+void ElasticRod::updateconfiguration(Eigen::VectorXd & pos, Eigen::VectorXd & theta, Eigen::VectorXd & vel)
+{
+}
+
+void ElasticRod::updateQuasiStaticFrame()
+{
+}
+
+void ElasticRod::updateBishopFrame()
+{
+	/*	
+	Compute Discrete Parallel Transportation 
+	Solved by a rotational matrix
+	*/
+
+	int nRods = (int)rods.size();
+	// The first one need to set up manually
+	t0 = nodes[1].pos - nodes[0].pos;
+	t0 = t0 / t0.norm();
+	// u0 $\perp$ t0
+	u0 = Eigen::Vector3d(t0[2]-t0[1],t0[0]-t0[2],t0[1]-t0[0]);
+	u0 = u0 / u0.norm();
+	v0 = u0.cross(t0);
+
+	rods[0].t0 = t0;
+	rods[0].u0 = u0;
+	rods[0].v0 = v0;
+
+
+	// Now compute Bishop frame
+	for (int i = 1; i < nRods; i++)
+	{
+		rods[i].t0 = nodes[i + 1].pos - nodes[i].pos;
+		rods[i].t0 = (rods[i].t0) / (rods[i].t0).norm();
+		Eigen::Vector3d n = (rods[i-1].t0).cross(rods[i].t0);
+
+		rods[i].u0 = VectorMath::rotationMatrix(n*asin(n.norm()) / n.norm()) * rods[i - 1].u0;
+		rods[i].u0 = (rods[i].u0) / (rods[i].u0).norm();
+
+	}
+}
