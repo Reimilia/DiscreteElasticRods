@@ -10,15 +10,15 @@ struct Particle
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    Particle(Eigen::Vector2d pos, double mass, bool isFixed, bool isInert) : pos(pos), mass(mass), fixed(isFixed), inert(isInert)
+    Particle(Eigen::Vector3d pos, double mass, bool isFixed, bool isInert) : pos(pos), mass(mass), fixed(isFixed), inert(isInert)
     {
         vel.setZero();
-		prevpos= pos;
+		prevpos = pos;
     }
 
-	Eigen::Vector2d prevpos;
-    Eigen::Vector2d pos;
-    Eigen::Vector2d vel;
+	Eigen::Vector3d prevpos;
+    Eigen::Vector3d pos;
+    Eigen::Vector3d vel;
     double mass;
     bool fixed;
     bool inert;
@@ -86,9 +86,9 @@ public:
 	// t always point to the tangent direction
 	Eigen::Vector3d u, v, t;
 	// How many degree is twisted compared to the material frame.
+	// This term is not counted as the degree of freedom
 	double theta;
-	// Centerline curvature
-	Eigen::Vector2d curvature;
+
 };
 
 

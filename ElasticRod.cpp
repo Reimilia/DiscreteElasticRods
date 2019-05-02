@@ -1,21 +1,22 @@
 #include "ElasticRod.h"
 
 
-ElasticRod::ElasticRod(int numSegments, Eigen::Vector3d st, Eigen::Vector3d ed)
+ElasticRod::ElasticRod()
 {
-	// TODO: precompute omega
+}
+
+ElasticRod::ElasticRod(std::vector<ElasticRod> rods, std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes)
+{
 }
 
 ElasticRod::~ElasticRod()
 {
 }
 
-void ElasticRod::buildconfiguration(Eigen::VectorXd & pos, Eigen::VectorXd & theta, Eigen::VectorXd & vel)
-{
-}
 
-void ElasticRod::updateconfiguration(Eigen::VectorXd & pos, Eigen::VectorXd & theta, Eigen::VectorXd & vel)
+Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
 {
+	return Eigen::Vector3d();
 }
 
 void ElasticRod::updateQuasiStaticFrame()
@@ -25,8 +26,8 @@ void ElasticRod::updateQuasiStaticFrame()
 void ElasticRod::updateBishopFrame()
 {
 	/*	
-	Compute Discrete Parallel Transportation 
-	Solved by a rotational matrix
+	Compute Discrete Parallel Transportation to update Bishop Frame for centerline
+	Move coordinate frame via the rotational matrix
 	*/
 
 	int nRods = (int)rods.size();
@@ -53,5 +54,6 @@ void ElasticRod::updateBishopFrame()
 		rods[i].u0 = VectorMath::rotationMatrix(n*asin(n.norm()) / n.norm()) * rods[i - 1].u0;
 		rods[i].u0 = (rods[i].u0) / (rods[i].u0).norm();
 
+		rods[i].v0 = (rods[i].u0).cross(v0);
 	}
 }

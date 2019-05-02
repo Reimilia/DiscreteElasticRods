@@ -122,10 +122,10 @@ void GooHook::updateRenderGeometry()
 		case SimParameters::CT_RIGIDROD:
 		case SimParameters::CT_ELASTICROD:
 		{
-			Vector2d sourcepos = particles_[(*it)->p1].pos;
-			Vector2d destpos = particles_[(*it)->p2].pos;
+			Vector3d sourcepos = particles_[(*it)->p1].pos;
+			Vector3d destpos = particles_[(*it)->p2].pos;
 
-			Vector2d vec = destpos - sourcepos;
+			Vector3d vec = destpos - sourcepos;
 			Vector3d width = Eigen::Vector3d(vec.norm(),0.08,0.10);
 			Eigen::Vector3d c = Eigen::Vector3d((sourcepos[0] + destpos[0]) / 2.0, (sourcepos[1] + destpos[1]) / 2.0, 0);
 			Eigen::Vector3d rot = Eigen::Vector3d(0, 0, std::atan2(vec[1],vec[0]));
@@ -230,7 +230,7 @@ bool GooHook::simulateOneStep()
 
 void GooHook::addParticle(double x, double y)
 {
-    Vector2d newpos(x,y);
+    Vector3d newpos(x,y,0);
     double mass = params_.particleMass;
     if(params_.particleFixed)
         mass = std::numeric_limits<double>::infinity();
@@ -243,7 +243,7 @@ void GooHook::addParticle(double x, double y)
     {
         if(particles_[i].inert)
             continue;
-        Vector2d pos = particles_[i].pos;
+        Vector3d pos = particles_[i].pos;
         double dist = (pos-newpos).norm();
         if(dist <= params_.maxSpringDist)
         {
@@ -263,7 +263,7 @@ void GooHook::addParticle(double x, double y)
 				int previd = newid;
 				int s = (params_.rodSegments > 2 ? params_.rodSegments : 2);
 				double rodrestlen = dist / s;
-
+				/*
 				for (int j = 1; j <= s; j++)
 				{
 					Eigen::Vector2d hingepos = j * 1.0 / s * pos + (s - j) * 1.0 / s * newpos;
@@ -295,7 +295,7 @@ void GooHook::addParticle(double x, double y)
 					}
 					prevprevid = previd;
 					previd = currentid;
-				}
+				}*/
                 break;
             }
             default:
@@ -545,7 +545,7 @@ void GooHook::processBendingForce(const Eigen::VectorXd & q, const Eigen::Vector
 void GooHook::testForceDifferential()
 {
 
-	Eigen::VectorXd q, vel, qPrev;
+	/*Eigen::VectorXd q, vel, qPrev;
 	buildConfiguration(q, vel, qPrev);
 
 	// Note: Now previous position will not add to buildConfiguration since we do not need it.
@@ -582,7 +582,7 @@ void GooHook::testForceDifferential()
 		std::cout << "Norm of Finite Difference is: " << (epsF - f).norm() / eps << std::endl;
 		std::cout << "Norm of Directinal Gradient is: " << (gradF*direction).norm() << std::endl;
 		std::cout << "The difference between above two is: " << ((epsF - f) / eps + gradF*direction).norm() << std::endl << std::endl;
-	}
+	}*/
 }
 
 
@@ -618,7 +618,7 @@ void GooHook::loadMesh()
 
 void GooHook::saveConfiguration(std::string filePath)
 {
-	int nParticles = particles_.size();
+	/*int nParticles = particles_.size();
 	int nConnectors = connectors_.size();
 	int nBendingStencils = bendingStencils_.size();
 	std::ofstream outfile(filePath, std::ios::trunc);
@@ -682,12 +682,12 @@ void GooHook::saveConfiguration(std::string filePath)
 		outfile << std::setprecision(16) << bendingStencils_[i].kb << "\n";
 		//outfile << std::setprecision(16) << bendingStencils_[i].theta << "\n";
 	}
-	outfile.close();
+	outfile.close();*/
 }
 
 void GooHook::loadConfiguration(std::string filePath)
 {
-	std::ifstream infile(filePath);
+	/*std::ifstream infile(filePath);
 	if (!infile)
 		return;
 	int nParticles;
@@ -785,5 +785,5 @@ void GooHook::loadConfiguration(std::string filePath)
 		//infile >> theta;
 		bendingStencils_.push_back(BendingStencil(p1, p2, p3, bendingStiffness));
 		bendingStencils_[i].theta = theta;
-	}
+	}*/
 }

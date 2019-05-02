@@ -3,6 +3,7 @@
 #include <deque>
 #include "SimParameters.h"
 #include "VectorMath.h"
+#include "ElasticRod.h"
 #include <Eigen/Sparse>
 #include <Eigen/StdVector>
 
