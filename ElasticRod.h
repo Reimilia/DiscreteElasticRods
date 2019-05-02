@@ -30,13 +30,13 @@ private:
 	Eigen::Vector3d u0, v0, t0;
 
 	// Rod Segments
-	std::vector<ElasticRod> rods;
+	std::vector<ElasticRodSegment> rods;
 
 	// Particles
 	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
 
 	// Bending Modulus
-	Eigen::Matrix2d B;
+	// Eigen::Matrix2d B;
 
 	// Twisting Coefficient
 	double beta;
@@ -44,14 +44,21 @@ private:
 	// Use bending stencils to control the binormal curvature and material curvature.
 	std::vector <BendingStencil> stencils;
 
+
 	// Boundary conodition for the rod
 	enum BoundaryCondition
 	{
 		BC_FREE,
-		BC_FIXED_END
+		BC_FIXED_END,
+		BC_RIGIDBODY_END
 	};
 
+	BoundaryCondition bcStats;
+
 	// Compute theta for each rod segments 
+	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
+	// since Eigen does not have a tridiagonal linear system solver
+	void computeEnergyDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
 	void updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments
 	void updateBishopFrame();

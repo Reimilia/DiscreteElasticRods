@@ -89,6 +89,8 @@ public:
 	// This term is not counted as the degree of freedom
 	double theta;
 
+	Eigen::Matrix2d bendingModulus;
+
 };
 
 
@@ -108,9 +110,11 @@ public:
 	{
 		prevCurvature.setZero();
 		nextCurvature.setZero();
+		length = 0.0;
 	}
 
     int p1, p2, p3;
+	double length;
 	Eigen::Vector3d kb;
 	
 	Eigen::Vector2d prevCurvature;

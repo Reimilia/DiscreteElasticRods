@@ -90,10 +90,7 @@ private:
 
     void addParticle(double x, double y);
     double getTotalParticleMass(int idx);
-    int getNumRigidRods();
-
-	void updateQuasiStaticFrame();
-	void updateBishopFrame();
+	int getNumRigidRods();
 
 
 	void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &v, Eigen::VectorXd &qprev);
