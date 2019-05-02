@@ -4,6 +4,7 @@
 
 #include <vector>
 #include "VectorMath.h"
+#include "MatrixMath.h"
 #include "SceneObjects.h"
 
 class ElasticRod
@@ -15,13 +16,15 @@ public:
 
 	// Tell the rendering program where a point belongs to a rod element need to be rendered in world coordinate.
 	// This program shall interpolate and return the coordinate. The rotation is 
-	// the composition of bishop frame of center line and the twist at specific location.
-	Eigen::Vector3d renderPos(Eigen::Vector3d &point, int index);
+	// the composition of bishop frame of center line and twist at specific location.
+	static const Eigen::Vector3d renderPos(Eigen::Vector3d &point, int index);
 
 private:
 	// Rest position and velocity
-	Eigen::MatrixX3d x0;
-	Eigen::MatrixX3d v0;
+	Eigen::MatrixX3d restPos;
+	Eigen::MatrixX3d restVel;
+	// Rest material curvature
+	Eigen::MatrixX2d restCurvature;
 
 	// Material Frame (Relatively for 0-th index point)
 	Eigen::Vector3d u0, v0, t0;
@@ -37,11 +40,9 @@ private:
 
 	// Twisting Coefficient
 	double beta;
-	
-	// Question
-	// Either to define curvature in Bending stencil
-	// Or directly store in a matrix
 
+	// Use bending stencils to control the binormal curvature and material curvature.
+	std::vector <BendingStencil> stencils;
 
 	// Boundary conodition for the rod
 	enum BoundaryCondition

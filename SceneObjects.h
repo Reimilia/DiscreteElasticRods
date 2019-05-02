@@ -104,14 +104,17 @@ public:
 struct BendingStencil
 {
 public:
-    BendingStencil(int p1, int p2, int p3, double kb) : p1(p1), p2(p2), p3(p3), kb(kb) 
+    BendingStencil(int p1, int p2, int p3, Eigen::Vector3d kb) : p1(p1), p2(p2), p3(p3), kb(kb) 
 	{
-		theta = 0.0;
+		prevCurvature.setZero();
+		nextCurvature.setZero();
 	}
 
     int p1, p2, p3;
-    double kb;
-	double theta;
+	Eigen::Vector3d kb;
+	
+	Eigen::Vector2d prevCurvature;
+	Eigen::Vector2d nextCurvature;
 };
 
 #endif

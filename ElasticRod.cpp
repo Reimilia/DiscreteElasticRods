@@ -13,14 +13,20 @@ ElasticRod::~ElasticRod()
 {
 }
 
-
-Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
+const Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
 {
-	return Eigen::Vector3d();
 }
+
 
 void ElasticRod::updateQuasiStaticFrame()
 {
+	/*
+	Using Newton's method to solve non-linear equation to determine twist angle theta in each rod element
+	Note that it shall incoporates boundary conditions
+	*/
+
+	
+
 }
 
 void ElasticRod::updateBishopFrame()
