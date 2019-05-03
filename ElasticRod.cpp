@@ -72,8 +72,6 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	// Compute the rest material curvature
 	updateMaterialCurvature();
-
-
 }
 
 ElasticRod::~ElasticRod()

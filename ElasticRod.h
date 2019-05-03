@@ -29,6 +29,10 @@ public:
 	// the composition of bishop frame of center line and twist at specific location.
 	const Eigen::Vector3d renderPos(Eigen::Vector3d &point, int index);
 
+
+	bool buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel);
+	bool unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::VectorXd &vel);
+
 private:
 	// Rest position and velocity
 	Eigen::MatrixX3d restPos;
