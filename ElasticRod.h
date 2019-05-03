@@ -6,18 +6,28 @@
 #include "VectorMath.h"
 #include "MatrixMath.h"
 #include "SceneObjects.h"
+#include "SimParameters.h"
+
+
+// Boundary conodition for the rod
+enum BoundaryCondition
+{
+	BC_FREE,
+	BC_FIXED_END,
+	BC_RIGIDBODY_END
+};
 
 class ElasticRod
 {
 public:
 	ElasticRod();
-	ElasticRod(std::vector<ElasticRod> rods, std::vector < Particle, Eigen::aligned_allocator<Particle>> nodes);
+	ElasticRod(std::vector <Particle, Eigen::aligned_allocator<Particle>> &nodes, SimParameters para, BoundaryCondition bc, std::vector<double> &initialTheta);
 	~ElasticRod();
 
 	// Tell the rendering program where a point belongs to a rod element need to be rendered in world coordinate.
 	// This program shall interpolate and return the coordinate. The rotation is 
 	// the composition of bishop frame of center line and twist at specific location.
-	static const Eigen::Vector3d renderPos(Eigen::Vector3d &point, int index);
+	const Eigen::Vector3d renderPos(Eigen::Vector3d &point, int index);
 
 private:
 	// Rest position and velocity
@@ -45,13 +55,6 @@ private:
 	std::vector <BendingStencil> stencils;
 
 
-	// Boundary conodition for the rod
-	enum BoundaryCondition
-	{
-		BC_FREE,
-		BC_FIXED_END,
-		BC_RIGIDBODY_END
-	};
 
 	BoundaryCondition bcStats;
 
@@ -62,6 +65,10 @@ private:
 	void updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments
 	void updateBishopFrame();
+	// Update all curvature assigned with bending stencils.
+	void updateMaterialCurvature();
+
+	SimParameters params;
 
 };
 

@@ -3,13 +3,77 @@
 
 ElasticRod::ElasticRod()
 {
+	nodes.clear();
+	nodes.shrink_to_fit();
+	rods.clear();
+	rods.shrink_to_fit();
+	stencils.clear();
+	stencils.shrink_to_fit();
 }
 
-ElasticRod::ElasticRod(std::vector<ElasticRod> rods, std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes)
+ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>> &particles, SimParameters para, BoundaryCondition bc, std::vector<double> &initialTheta)
 {
-	//Create bending stencils 
-	
+	//Create rods and bending stencils 
+	int nNodes = (int)particles.size();
+	nodes.clear();
+	nodes.shrink_to_fit();
+	for (int i = 0; i < nNodes; i++)
+	{
+		nodes.push_back(particles[i]);
+	}
+
+	rods.clear();
+	rods.shrink_to_fit();
+	for (int i = 0; i < nNodes - 1; i++)
+	{
+		double l = (nodes[i + 1].pos - nodes[i].pos).norm();
+		rods.push_back(ElasticRodSegment(i,i+1,0,l));
+		rods[i].theta = initialTheta[i];
+	}
+
+	stencils.clear();
+	stencils.shrink_to_fit();
+	for (int i = 0; i < nNodes - 2; i++)
+	{
+		Eigen::Vector3d e1, e2;
+		e1 = nodes[i + 1].pos - nodes[i].pos;
+		e2 = nodes[i + 2].pos - nodes[i + 1].pos;
+		Eigen::Vector3d kb = 2 * e1.cross(e2) / (e1.norm()*e2.norm() + e1.dot(e2));
+		double l = rods[i].length + rods[i + 1].length;
+		stencils.push_back(BendingStencil(i, i + 1, i + 2, kb));
+		stencils[i].length = l;
+	}
+
+	params = para;
+
 	//Precompute something
+
+	// Store rest position and velocity
+
+	// The first one material frame need to set up manually
+	t0 = nodes[1].pos - nodes[0].pos;
+	t0 = t0 / t0.norm();
+	// u0 $\perp$ t0
+	u0 = Eigen::Vector3d(t0[2] - t0[1], t0[0] - t0[2], t0[1] - t0[0]);
+	u0 = u0 / u0.norm();
+	v0 = u0.cross(t0);
+
+	rods[0].t = t0;
+	rods[0].u = u0;
+	rods[0].v = v0;
+
+	bcStats = bc;
+
+	// Compute the rest material frame
+	updateBishopFrame();
+	
+	// Compute Material Curvature
+	updateQuasiStaticFrame();
+
+	// Compute the rest material curvature
+	updateMaterialCurvature();
+
+
 }
 
 ElasticRod::~ElasticRod()
@@ -21,8 +85,23 @@ const Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
 	/*
 	For rendering purpose:
 	Need to know the actual position in world coordinate. 
-	The rigid body template transformation need to be combined with material curvature in centerline.
+	The rigid body template transformation need to be combined with material frame in centerline.
+	Basically, one lazy way is to compute interpolated theta based on the position, 
+	and then rotate along t-axis via the interpolated theta value
+
+	The input of this function is the rigid body point position before apply twist!
+	We do not bind any structure of centerline in the class.
 	*/
+	
+	Eigen::Vector3d pos;
+	int p1;
+	p1 = rods[index].p1;
+	double dist = (point - nodes[p1].pos).dot(rods[index].t);
+
+	if (dist<0 || dist>rods[index].length)
+		return point;
+
+	return VectorMath::rotationMatrix(rods[index].t * rods[index].theta / rods[index].length * dist) * point;
 }
 
 void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
@@ -72,9 +151,9 @@ void ElasticRod::updateQuasiStaticFrame()
 	Note that it shall incoporates boundary conditions
 	*/
 
-	// This is bad, but not that important
-	int maxNewtonIter = 10;
-	double newtonTolerance = 1e-6;
+	// This is bad, but in case we need this
+	//int NewtonMaxIter = 10;
+	//double NewtonTolerance = 1e-6;
 
 	int nrods = (int)rods.size();
 
@@ -90,10 +169,10 @@ void ElasticRod::updateQuasiStaticFrame()
 	}
 
 
-	for (int t = 0; t < maxNewtonIter; t++)
+	for (int t = 0; t < params.NewtonMaxIters; t++)
 	{
 		computeEnergyDifferentialAndHessian(dE, lowerH, centerH, upperH);
-		if (dE.norm() < newtonTolerance)
+		if (dE.norm() < params.NewtonTolerance)
 		{
 			break;
 		}
@@ -127,17 +206,6 @@ void ElasticRod::updateBishopFrame()
 	*/
 
 	int nRods = (int)rods.size();
-	// The first one need to set up manually
-	t0 = nodes[1].pos - nodes[0].pos;
-	t0 = t0 / t0.norm();
-	// u0 $\perp$ t0
-	u0 = Eigen::Vector3d(t0[2]-t0[1],t0[0]-t0[2],t0[1]-t0[0]);
-	u0 = u0 / u0.norm();
-	v0 = u0.cross(t0);
-
-	rods[0].t = t0;
-	rods[0].u= u0;
-	rods[0].v = v0;
 
 
 	// Now compute Bishop frame
@@ -151,5 +219,27 @@ void ElasticRod::updateBishopFrame()
 		rods[i].u = (rods[i].u) / (rods[i].u).norm();
 
 		rods[i].v = (rods[i].t).cross(rods[i].u);
+	}
+}
+
+void ElasticRod::updateMaterialCurvature()
+{
+	/*
+	Compute material curvatures
+	*/
+	int nRods = (int)rods.size();
+	for (int i = 0; i < nRods; ++i)
+	{
+		Eigen::Vector3d m1 = cos(rods[i].theta)* rods[i].u + sin(rods[i].theta)* rods[i].v;
+		Eigen::Vector3d m2 = -sin(rods[i].theta)* rods[i].v + cos(rods[i].theta)* rods[i].u;
+		if (i < nRods - 1)
+		{
+			stencils[i].prevCurvature = Eigen::Vector2d((stencils[i].kb).dot(m2), -(stencils[i].kb).dot(m1));
+		}
+		if (i > 0)
+		{
+			stencils[i - 1].nextCurvature = Eigen::Vector2d((stencils[i - 1].kb).dot(m2), -(stencils[i - 1].kb).dot(m1));
+		}
+		
 	}
 }
