@@ -61,7 +61,8 @@ public:
      * This method is called in the *rendering thread*. If you need to make changes to the simulation state, you
      * should stash the mouse click in a message queue and deal with it in the simulation thread.
      */
-    virtual void mouseClicked(double x, double y, int button) {}
+	virtual bool mouseClicked(igl::opengl::glfw::Viewer &viewer, Eigen::Vector3d dir, int button) { return false; }
+
 
     /*
      * Runs the simulation, if it has been paused (or never started).

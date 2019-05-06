@@ -17,11 +17,11 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	int nNodes = (int)particles.size();
 	nodes.clear();
 	nodes.shrink_to_fit();
-	restPos.resize(nNodes, Eigen::NoChange);
+	restPos.resize(Eigen::NoChange, nNodes);
 	for (int i = 0; i < nNodes; i++)
 	{
 		nodes.push_back(particles[i]);
-		restPos.row(i) = particles[i].pos;
+		restPos.col(i) = particles[i].pos;
 	}
 
 	rods.clear();
@@ -55,7 +55,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	//Precompute something
 
 	// The first one material frame need to set up manually
-	// The best choice is the rigit body template coordinate at the first centerline.
+	// The best choice is the body template coordinate frame at the first centerline.
 	t0 = nodes[1].pos - nodes[0].pos;
 	t0 = t0 / t0.norm();
 	// u0 $\perp$ t0
@@ -68,7 +68,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	rods[0].v = v0;
 
 	bcStats = bc;
-
+	
 	// Compute the rest material frame
 	updateBishopFrame();
 	
@@ -77,11 +77,11 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	// Compute the twist via quasi static assumption
 	updateMaterialCurvature();
-	restCurvature.resize(2*(nNodes - 2), Eigen::NoChange);
+	restCurvature.resize(Eigen::NoChange, 2*(nNodes - 2));
 	for (int i = 0; i < nNodes - 2; i++)
 	{
-		restCurvature.row(2 * i) = stencils[i].prevCurvature;
-		restCurvature.row(2 * i + 1) = stencils[i].nextCurvature;
+		restCurvature.col(2 * i) = stencils[i].prevCurvature;
+		restCurvature.col(2 * i + 1) = stencils[i].nextCurvature;
 	}
 }
 
@@ -146,11 +146,12 @@ double ElasticRod::computeTotalEnergy()
 	int nstencils = (int)stencils.size();
 	for (int i = 0; i < nstencils; i++)
 	{
-		double e1 = (stencils[i].prevCurvature - restCurvature.row(2 * i)).dot(rods[i].bendingModulus * (stencils[i].prevCurvature - restCurvature.row(2 * i)));
-		double e2 = (stencils[i].nextCurvature - restCurvature.row(2 * i + 1)).dot(rods[i + 1].bendingModulus * (stencils[i].prevCurvature - restCurvature.row(2 * i + 1)));
+		double e1 = (stencils[i].prevCurvature - restCurvature.col(2 * i)).dot(rods[i].bendingModulus * (stencils[i].prevCurvature - restCurvature.col(2 * i)));
+		double e2 = (stencils[i].nextCurvature - restCurvature.col(2 * i + 1)).dot(rods[i + 1].bendingModulus * (stencils[i].prevCurvature - restCurvature.col(2 * i + 1)));
 		energy += (e1 + e2) / 2 / stencils[i].restlength;
 		energy += beta * (rods[i + 1].theta - rods[i].theta) * (rods[i + 1].theta - rods[i].theta) / stencils[i].restlength;
 	}
+	return energy;
 }
 
 void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
@@ -165,6 +166,10 @@ void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen
 	lowerH.resize(nrods);
 	centerH.resize(nrods);
 	upperH.resize(nrods);
+	dE.setZero();
+	lowerH.setZero();
+	centerH.setZero();
+	upperH.setZero();
 	
 	Eigen::Matrix2d J;
 	J << 0, -1, 1, 0;
@@ -176,7 +181,7 @@ void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen
 		if (i < nrods-1)
 		{
 			dE[i] -= 2 * beta * (rods[i + 1].theta - rods[i].theta) / stencils[i].length;
-			double dw = stencils[i].prevCurvature.dot(J*rods[i].bendingModulus* (stencils[i].prevCurvature - restCurvature.row(2 * i)));
+			double dw = (stencils[i].prevCurvature).dot(J*rods[i].bendingModulus* (stencils[i].prevCurvature - restCurvature.col(2 * i)));
 			dE[i] +=  dw / stencils[i].length;
 			upperH[i] = -2 * beta / stencils[i].length;
 			centerH[i] += 2 * beta / stencils[i].length + (stencils[i].prevCurvature.dot(J.transpose()*rods[i].bendingModulus*J* stencils[i].prevCurvature) + dw) / stencils[i].length;
@@ -184,7 +189,7 @@ void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen
 		if (i > 0)
 		{
 			dE[i] += 2 * beta * (rods[i].theta - rods[i - 1].theta) / stencils[i - 1].length;
-			double dw = stencils[i - 1].nextCurvature.dot(J*rods[i].bendingModulus* (stencils[i - 1].nextCurvature - restCurvature.row(2 * i - 1)));
+			double dw = (stencils[i - 1].nextCurvature).dot(J*rods[i].bendingModulus* (stencils[i - 1].nextCurvature - restCurvature.col(2 * i - 1)));
 			dE[i] +=  dw / stencils[i - 1].length;
 			lowerH[i] = -2 * beta / stencils[i - 1].length;
 			centerH[i] += 2 * beta / stencils[i - 1].length + (stencils[i - 1].nextCurvature.dot(J.transpose()*rods[i].bendingModulus*J*stencils[i - 1].nextCurvature) + dw) / stencils[i - 1].length;
@@ -217,7 +222,6 @@ void ElasticRod::updateQuasiStaticFrame()
 	{
 		thetas[i] = rods[i].theta;
 	}
-
 
 	for (int t = 0; t < params.NewtonMaxIters; t++)
 	{

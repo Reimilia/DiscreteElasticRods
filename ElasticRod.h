@@ -3,11 +3,11 @@
 #define ELASTICROD_H
 
 #include <vector>
+#include <Eigen/Dense>
 #include "VectorMath.h"
 #include "MatrixMath.h"
 #include "SceneObjects.h"
 #include "SimParameters.h"
-
 
 // Boundary conodition for the rod
 enum BoundaryCondition
@@ -35,13 +35,18 @@ public:
 
 	// For test purpose
 	double computeTotalEnergy();
+	// Compute theta for each rod segments 
+	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
+	// since Eigen does not have a tridiagonal linear system solver
+	void computeEnergyDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
+
 		
 private:
 	// Rest position and length
-	Eigen::MatrixX3d restPos;
+	Eigen::Matrix3Xd restPos;
 	Eigen::VectorXd  restLength;
 	// Rest material curvature
-	Eigen::MatrixX2d restCurvature;
+	Eigen::Matrix2Xd restCurvature;
 
 	// Material Frame (Relatively for 0-th index point)
 	Eigen::Vector3d u0, v0, t0;
@@ -65,10 +70,6 @@ private:
 
 	BoundaryCondition bcStats;
 
-	// Compute theta for each rod segments 
-	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
-	// since Eigen does not have a tridiagonal linear system solver
-	void computeEnergyDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
 	void updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments
 	void updateBishopFrame();
