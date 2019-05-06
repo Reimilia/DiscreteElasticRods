@@ -17,18 +17,21 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	int nNodes = (int)particles.size();
 	nodes.clear();
 	nodes.shrink_to_fit();
+	restPos.resize(nNodes, Eigen::NoChange);
 	for (int i = 0; i < nNodes; i++)
 	{
 		nodes.push_back(particles[i]);
+		restPos.row(i) = particles[i].pos;
 	}
 
 	rods.clear();
 	rods.shrink_to_fit();
+	restLength.resize(nNodes - 1);
 	for (int i = 0; i < nNodes - 1; i++)
 	{
 		double l = (nodes[i + 1].pos - nodes[i].pos).norm();
 		rods.push_back(ElasticRodSegment(i,i+1,0,l));
-		rods[i].theta = initialTheta[i];
+		restLength[i] = l;
 	}
 
 	stencils.clear();
@@ -42,15 +45,17 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 		double l = rods[i].length + rods[i + 1].length;
 		stencils.push_back(BendingStencil(i, i + 1, i + 2, kb));
 		stencils[i].length = l;
+		stencils[i].restlength = l;
 	}
 
 	params = para;
 
+	beta = 1.0;
+
 	//Precompute something
 
-	// Store rest position and velocity
-
 	// The first one material frame need to set up manually
+	// The best choice is the rigit body template coordinate at the first centerline.
 	t0 = nodes[1].pos - nodes[0].pos;
 	t0 = t0 / t0.norm();
 	// u0 $\perp$ t0
@@ -70,8 +75,14 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	// Compute Material Curvature
 	updateQuasiStaticFrame();
 
-	// Compute the rest material curvature
+	// Compute the twist via quasi static assumption
 	updateMaterialCurvature();
+	restCurvature.resize(2*(nNodes - 2), Eigen::NoChange);
+	for (int i = 0; i < nNodes - 2; i++)
+	{
+		restCurvature.row(2 * i) = stencils[i].prevCurvature;
+		restCurvature.row(2 * i + 1) = stencils[i].nextCurvature;
+	}
 }
 
 ElasticRod::~ElasticRod()
@@ -102,6 +113,46 @@ const Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
 	return VectorMath::rotationMatrix(rods[index].t * rods[index].theta / rods[index].length * dist) * point;
 }
 
+bool ElasticRod::buildConfiguration(Eigen::VectorXd & pos, Eigen::VectorXd & vel)
+{
+	int nparticles = (int)nodes.size();
+	pos.resize(3 * nparticles);
+	vel.resize(3 * nparticles);
+	for (int i = 0; i < nparticles; i++)
+	{
+		pos.segment<3>(3 * i) = nodes[i].pos;
+		vel.segment<3>(3 * i) = nodes[i].vel;
+	}
+	return true;
+}
+
+bool ElasticRod::unbuildConfiguration(const Eigen::VectorXd & pos, const Eigen::VectorXd & vel)
+{
+	int nparticles = (int)nodes.size();
+	for (int i = 0; i < nparticles; i++)
+	{
+		nodes[i].prevpos = pos;
+		nodes[i].pos = pos.segment<3>(3 * i);
+		nodes[i].vel = vel.segment<3>(3 * i);
+	}
+	return true;
+}
+
+double ElasticRod::computeTotalEnergy()
+{
+	// Twist + Bend
+	// Bend is what we realized in World of Goo Mile Stone
+	double energy = 0.0;
+	int nstencils = (int)stencils.size();
+	for (int i = 0; i < nstencils; i++)
+	{
+		double e1 = (stencils[i].prevCurvature - restCurvature.row(2 * i)).dot(rods[i].bendingModulus * (stencils[i].prevCurvature - restCurvature.row(2 * i)));
+		double e2 = (stencils[i].nextCurvature - restCurvature.row(2 * i + 1)).dot(rods[i + 1].bendingModulus * (stencils[i].prevCurvature - restCurvature.row(2 * i + 1)));
+		energy += (e1 + e2) / 2 / stencils[i].restlength;
+		energy += beta * (rods[i + 1].theta - rods[i].theta) * (rods[i + 1].theta - rods[i].theta) / stencils[i].restlength;
+	}
+}
+
 void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
 {
 	/*
@@ -118,6 +169,7 @@ void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen
 	Eigen::Matrix2d J;
 	J << 0, -1, 1, 0;
 
+	//TODO: replace all length to rest length
 	for (int i = 0; i < nrods; i++)
 	{
 		dE[i] = lowerH[i] = centerH[i] = upperH[i] = 0;

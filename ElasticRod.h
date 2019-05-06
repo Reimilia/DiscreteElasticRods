@@ -33,10 +33,13 @@ public:
 	bool buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel);
 	bool unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::VectorXd &vel);
 
+	// For test purpose
+	double computeTotalEnergy();
+		
 private:
-	// Rest position and velocity
+	// Rest position and length
 	Eigen::MatrixX3d restPos;
-	Eigen::MatrixX3d restVel;
+	Eigen::VectorXd  restLength;
 	// Rest material curvature
 	Eigen::MatrixX2d restCurvature;
 
