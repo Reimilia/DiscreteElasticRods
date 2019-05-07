@@ -154,6 +154,43 @@ double ElasticRod::computeTotalEnergy()
 	return energy;
 }
 
+void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
+{
+	/*
+	Compute -dE as the force
+	*/
+	Eigen::Matrix2d J;
+	J << 0, -1, 1, 0;
+
+	int nstencils = (int)stencils.size();
+	int nparticles = (int)nodes.size();
+	double dEdtheta = (stencils[nstencils - 1].nextCurvature.dot(J * rods[nstencils].bendingModulus* (stencils[nstencils - 1].nextCurvature - restCurvature.col(2 * nstencils - 1))) +
+		2 * beta * (rods[nstencils].theta - rods[nstencils - 1].theta)) / stencils[nstencils - 1].restlength;
+
+	f.resize(3 * nparticles);
+
+	for (int i = 0; i < nparticles; i++)
+	{
+		// assemble forces
+		Eigen::Vector3d dEdxi = Eigen::Vector3d::Zero();
+		Eigen::Vector3d m1, m2;
+		Eigen::Vector3d psi, dw;
+
+		m1 = cos(rods[i].theta)* rods[i].u + sin(rods[i].theta)* rods[i].v;
+		m2 = -sin(rods[i].theta)* rods[i].v + cos(rods[i].theta)* rods[i].u;
+
+		// i,i,i
+
+		// i,i,i+1
+
+		// i,i+1,i+1
+
+
+	}
+
+
+}
+
 void ElasticRod::computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
 {
 	/*
@@ -198,41 +235,6 @@ void ElasticRod::computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd & dE, 
 	
 }
 
-void ElasticRod::updateCenterLine()
-{	
-	/* Process Elastic Rod Centerline force
-	   The difficulty here is to compute derivative correctly.
-	   Pipeline:
-	   1. Velocity Verlet
-	   2. Step and Project (Or Lagrangian Multiplier)
-	   3. Update
-
-	   Note we separate rigid body simulation and elastic rod simulation apart based on Algorithm shown in the paper.
-	*/
-	Eigen::Matrix2d J;
-	J << 0, -1, 1, 0;
-
-	int nstencils = (int)stencils.size();
-	int nparticles = (int)nodes.size();
-	double dEdtheta = (stencils[nstencils-1].nextCurvature.dot(J * rods[nstencils].bendingModulus* (stencils[nstencils - 1].nextCurvature - restCurvature.col(2 * nstencils - 1))) +
-			2 * beta * (rods[nstencils].theta - rods[nstencils - 1].theta)) / stencils[nstencils - 1].restlength;
-
-	Eigen::VectorXd prevpos, pos, vel;
-	buildConfiguration(pos, vel);
-
-	prevpos = pos;
-	pos = pos + params.timeStep * vel;
-
-	for (int i = 0; i < nparticles; i++)
-	{
-		// assemble forces
-		Eigen::Vector3d dEdxi = Eigen::Vector3d::Zero();
-		Eigen::Vector3d term1;
-	}
-
-	unbuildConfiguration(pos, vel);
-	updateAfterTimeIntegration();
-}
 
 void ElasticRod::updateAfterTimeIntegration()
 {

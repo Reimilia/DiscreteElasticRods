@@ -35,12 +35,16 @@ public:
 
 	// For test purpose
 	double computeTotalEnergy();
-	
-	// Velocity Verlet for centerline time integration (unconstrained)
-	// And then do step and project
-	// This task is separable
-	void updateCenterLine();
+
+	// Assemble Centerline Forces from potential energy
+	void computeCenterlineForces(Eigen::VectorXd &);
 		
+	// Update rods and stencil information based on new configuration of the position
+	void updateAfterTimeIntegration();
+
+	// Particles
+	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
+
 private:
 	// Rest position and length
 	Eigen::Matrix3Xd restPos;
@@ -54,9 +58,7 @@ private:
 	// Rod Segments
 	std::vector<ElasticRodSegment> rods;
 
-	// Particles
-	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
-
+	
 	// Bending Modulus
 	// Eigen::Matrix2d B;
 
@@ -73,8 +75,6 @@ private:
 	// since Eigen does not have a tridiagonal linear system solver
 	void computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
 
-	// Update rods and stencil information based on new configuration of the position
-	void updateAfterTimeIntegration();
 	// Update theta
 	void updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments
