@@ -35,11 +35,11 @@ public:
 
 	// For test purpose
 	double computeTotalEnergy();
-	// Compute theta for each rod segments 
-	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
-	// since Eigen does not have a tridiagonal linear system solver
-	void computeEnergyDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
-
+	
+	// Velocity Verlet for centerline time integration (unconstrained)
+	// And then do step and project
+	// This task is separable
+	void updateCenterLine();
 		
 private:
 	// Rest position and length
@@ -66,10 +66,16 @@ private:
 	// Use bending stencils to control the binormal curvature and material curvature.
 	std::vector <BendingStencil> stencils;
 
-
-
 	BoundaryCondition bcStats;
 
+	// Compute theta for each rod segments 
+	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
+	// since Eigen does not have a tridiagonal linear system solver
+	void computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
+
+	// Update rods and stencil information based on new configuration of the position
+	void updateAfterTimeIntegration();
+	// Update theta
 	void updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments
 	void updateBishopFrame();

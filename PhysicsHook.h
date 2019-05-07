@@ -63,6 +63,19 @@ public:
      */
 	virtual bool mouseClicked(igl::opengl::glfw::Viewer &viewer, Eigen::Vector3d dir, int button) { return false; }
 
+	/*
+	* Called when the user unclicks the mouse on the simulation panel.
+	* This method is called in the *rendering thread*. If you need to make changes to the simulation state, you
+	* should stash the mouse click in a message queue and deal with it in the simulation thread.
+	*/
+	virtual bool mouseReleased(igl::opengl::glfw::Viewer &viewer, int button) { return false; }
+
+	/*
+	* Called when the user drags the mouse on the simulation panel.
+	* This method is called in the *rendering thread*. If you need to make changes to the simulation state, you
+	* should stash the mouse click in a message queue and deal with it in the simulation thread.
+	*/
+	virtual bool mouseMoved(igl::opengl::glfw::Viewer &viewer, int button) { return false; }
 
     /*
      * Runs the simulation, if it has been paused (or never started).

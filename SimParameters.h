@@ -37,7 +37,7 @@ struct SimParameters
         //sawRadius= 0.1;
     }
 
-    enum ClickMode {CM_ADDPARTICLE, CM_ADDSAW};
+    enum ClickMode {CM_ADDPARTICLE, CM_FREE};
 
     enum ConstraintHandling {CH_PENALTY, CH_STEPPROJECT, CH_LAGRANGEMULT};
 	enum TimeIntegrator {TI_VELOCITY_VERLET, TI_IMPLICIT_MIDPOINT};

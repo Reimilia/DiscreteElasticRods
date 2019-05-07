@@ -25,7 +25,7 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 	}
 	if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0\0");
+		ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0Toggle Rotation\0\0");
 		ImGui::Combo("Connector Type", (int *)&params_.connectorType, "Flexible Rods\0\0");
 	}
 	if (ImGui::CollapsingHeader("Simulation Options", ImGuiTreeNodeFlags_DefaultOpen))
@@ -111,7 +111,22 @@ void ElasticHook::updateRenderGeometry()
 		idx += 5;
 	}
 
+
 	double basescale = 0.1;
+	//Push a test bar 
+	int nverts = rodV.rows();
+	int nfaces = rodF.rows();
+	for (int i = 0; i < nverts; i++)
+	{
+		verts.push_back(basescale * rodV.row(i));
+
+	}
+	for (int i = 0; i < nfaces; i++)
+	{
+		faces.push_back(rodF.row(i).transpose() + idx * Eigen::Vector3i::Ones());
+	}
+	idx += nverts;
+
 	for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
 	{
 		switch ((*it)->getType())
@@ -432,42 +447,17 @@ bool ElasticHook::takeOneStep(double &ratio, Eigen::VectorXd &x, std::function<v
 
 void ElasticHook::computeForceAndHessian(const VectorXd &q, const VectorXd &qprev, Eigen::VectorXd &F, SparseMatrix<double> &H)
 {
-	/* Process Elastic Rod Centerline force
-	   The difficulty here is to compute derivative correctly.
-	*/
-	for (std::vector<ElasticRod *>::iterator it = rods_.begin(); it != rods_.end(); ++it)
-	{
-	}	
+	
 }
 
 void ElasticHook::processGravityForce(VectorXd &F)
 {
 }
 
-void ElasticHook::processSpringForce(const Eigen::VectorXd &q, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
-{
-
-}
-
-void ElasticHook::processDampingForce(const VectorXd &q, const VectorXd &qprev, VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
-{
-
-}
 
 void ElasticHook::processFloorForce(const VectorXd &q, const VectorXd &qprev, VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
 {
 }
-
-void ElasticHook::processPenaltyForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
-{
-
-}
-
-void ElasticHook::processBendingForce(const Eigen::VectorXd & q, const Eigen::VectorXd & qprev, Eigen::VectorXd & F, std::vector<Eigen::Triplet<double>>& H)
-{
-}
-
-
 
 
 

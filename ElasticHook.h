@@ -24,6 +24,8 @@ public:
 	virtual void initSimulation();
 
 	virtual bool mouseClicked(igl::opengl::glfw::Viewer &viewer, Eigen::Vector3d dir, int button);
+	//virtual bool mouseReleased(igl::opengl::glfw::Viewer &viewer, int button);
+	//virtual bool mouseMoved(igl::opengl::glfw::Viewer &viewer, int button);
 
 	virtual void updateRenderGeometry();
 
@@ -102,12 +104,8 @@ private:
 	//void computeContraintsAndGradient(const Eigen::VectorXd q, Eigen::VectorXd &F, Eigen::SparseMatrix<double> *gradF);
 
 	void processGravityForce(Eigen::VectorXd &F);
-	void processSpringForce(const Eigen::VectorXd &q, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
-	void processDampingForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
 	void processFloorForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
-	void processPenaltyForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
-	void processBendingForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
-
+	
 	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeForceAndHessian);
 	bool takeOneStep(double &ratio, Eigen::VectorXd &x, std::function<void(Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeForceAndHessian);
 

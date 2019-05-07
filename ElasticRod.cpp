@@ -154,7 +154,7 @@ double ElasticRod::computeTotalEnergy()
 	return energy;
 }
 
-void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
+void ElasticRod::computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
 {
 	/*
 	Only for inner d.o.f. (theta)
@@ -174,29 +174,88 @@ void ElasticRod::computeEnergyDifferentialAndHessian(Eigen::VectorXd & dE, Eigen
 	Eigen::Matrix2d J;
 	J << 0, -1, 1, 0;
 
-	//TODO: replace all length to rest length
 	for (int i = 0; i < nrods; i++)
 	{
 		dE[i] = lowerH[i] = centerH[i] = upperH[i] = 0;
 		if (i < nrods-1)
 		{
-			dE[i] -= 2 * beta * (rods[i + 1].theta - rods[i].theta) / stencils[i].length;
+			dE[i] -= 2 * beta * (rods[i + 1].theta - rods[i].theta) / stencils[i].restlength;
 			double dw = (stencils[i].prevCurvature).dot(J*rods[i].bendingModulus* (stencils[i].prevCurvature - restCurvature.col(2 * i)));
-			dE[i] +=  dw / stencils[i].length;
-			upperH[i] = -2 * beta / stencils[i].length;
-			centerH[i] += 2 * beta / stencils[i].length + (stencils[i].prevCurvature.dot(J.transpose()*rods[i].bendingModulus*J* stencils[i].prevCurvature) + dw) / stencils[i].length;
+			dE[i] +=  dw / stencils[i].restlength;
+			upperH[i] = -2 * beta / stencils[i].restlength;
+			centerH[i] += 2 * beta / stencils[i].restlength + (stencils[i].prevCurvature.dot(J.transpose()*rods[i].bendingModulus*J*stencils[i].prevCurvature) + dw) / stencils[i].restlength;
 		}
 		if (i > 0)
 		{
-			dE[i] += 2 * beta * (rods[i].theta - rods[i - 1].theta) / stencils[i - 1].length;
+			dE[i] += 2 * beta * (rods[i].theta - rods[i - 1].theta) / stencils[i - 1].restlength;
 			double dw = (stencils[i - 1].nextCurvature).dot(J*rods[i].bendingModulus* (stencils[i - 1].nextCurvature - restCurvature.col(2 * i - 1)));
-			dE[i] +=  dw / stencils[i - 1].length;
-			lowerH[i] = -2 * beta / stencils[i - 1].length;
-			centerH[i] += 2 * beta / stencils[i - 1].length + (stencils[i - 1].nextCurvature.dot(J.transpose()*rods[i].bendingModulus*J*stencils[i - 1].nextCurvature) + dw) / stencils[i - 1].length;
+			dE[i] +=  dw / stencils[i - 1].restlength;
+			lowerH[i] = -2 * beta / stencils[i - 1].restlength;
+			centerH[i] += 2 * beta / stencils[i - 1].restlength + (stencils[i - 1].nextCurvature.dot(J.transpose()*rods[i].bendingModulus*J*stencils[i - 1].nextCurvature) + dw) / stencils[i - 1].restlength;
 		}
 		
 	}
 	
+}
+
+void ElasticRod::updateCenterLine()
+{	
+	/* Process Elastic Rod Centerline force
+	   The difficulty here is to compute derivative correctly.
+	   Pipeline:
+	   1. Velocity Verlet
+	   2. Step and Project (Or Lagrangian Multiplier)
+	   3. Update
+
+	   Note we separate rigid body simulation and elastic rod simulation apart based on Algorithm shown in the paper.
+	*/
+	Eigen::Matrix2d J;
+	J << 0, -1, 1, 0;
+
+	int nstencils = (int)stencils.size();
+	int nparticles = (int)nodes.size();
+	double dEdtheta = (stencils[nstencils-1].nextCurvature.dot(J * rods[nstencils].bendingModulus* (stencils[nstencils - 1].nextCurvature - restCurvature.col(2 * nstencils - 1))) +
+			2 * beta * (rods[nstencils].theta - rods[nstencils - 1].theta)) / stencils[nstencils - 1].restlength;
+
+	Eigen::VectorXd prevpos, pos, vel;
+	buildConfiguration(pos, vel);
+
+	prevpos = pos;
+	pos = pos + params.timeStep * vel;
+
+	for (int i = 0; i < nparticles; i++)
+	{
+		// assemble forces
+		Eigen::Vector3d dEdxi = Eigen::Vector3d::Zero();
+		Eigen::Vector3d term1;
+	}
+
+	unbuildConfiguration(pos, vel);
+	updateAfterTimeIntegration();
+}
+
+void ElasticRod::updateAfterTimeIntegration()
+{
+	/*
+	Updates the following:
+	1. rods' length (Although we have inextensible constraint)
+	2. bishop frame
+	3. check quasi static frame constraint and update material frame(i.e. theta)
+	
+	*/
+
+	int nrods = (int)rods.size();
+	for (int i = 0; i < nrods; i++)
+	{
+		rods[i].length = (nodes[i + 1].pos - nodes[i].pos).norm();
+		if (i > 0)
+		{
+			stencils[i - 1].length = rods[i].length + rods[i - 1].length;
+		}
+	}
+	updateBishopFrame();
+	updateQuasiStaticFrame();
+	updateMaterialCurvature();
 }
 
 void ElasticRod::updateQuasiStaticFrame()
@@ -225,7 +284,7 @@ void ElasticRod::updateQuasiStaticFrame()
 
 	for (int t = 0; t < params.NewtonMaxIters; t++)
 	{
-		computeEnergyDifferentialAndHessian(dE, lowerH, centerH, upperH);
+		computeEnergyThetaDifferentialAndHessian(dE, lowerH, centerH, upperH);
 		if (dE.norm() < params.NewtonTolerance)
 		{
 			break;
