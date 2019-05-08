@@ -47,10 +47,10 @@ public:
 
 private:
 	// Rest position and length
-	Eigen::Matrix3Xd restPos;
+	Eigen::MatrixXd restPos;
 	Eigen::VectorXd  restLength;
 	// Rest material curvature
-	Eigen::Matrix2Xd restCurvature;
+	Eigen::MatrixXd restCurvature;
 
 	// Material Frame (Relatively for 0-th index point)
 	Eigen::Vector3d u0, v0, t0;

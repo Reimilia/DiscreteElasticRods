@@ -17,7 +17,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	int nNodes = (int)particles.size();
 	nodes.clear();
 	nodes.shrink_to_fit();
-	restPos.resize(Eigen::NoChange, nNodes);
+	restPos.resize(3, nNodes);
 	for (int i = 0; i < nNodes; i++)
 	{
 		nodes.push_back(particles[i]);
@@ -77,7 +77,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	// Compute the twist via quasi static assumption
 	updateMaterialCurvature();
-	restCurvature.resize(Eigen::NoChange, 2*(nNodes - 2));
+	restCurvature.resize(3, 2*(nNodes - 2));
 	for (int i = 0; i < nNodes - 2; i++)
 	{
 		restCurvature.col(2 * i) = stencils[i].prevCurvature;
@@ -158,6 +158,8 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 {
 	/*
 	Compute -dE as the force
+
+	The difficulty here is boundary conditions
 	*/
 	Eigen::Matrix2d J;
 	J << 0, -1, 1, 0;
@@ -169,26 +171,39 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 
 	f.resize(3 * nparticles);
 
-	for (int i = 0; i < nparticles; i++)
+	for (int k = 0; k < nstencils; k++)
 	{
-		// assemble forces
-		Eigen::Vector3d dEdxi = Eigen::Vector3d::Zero();
-		Eigen::Vector3d m1, m2;
-		Eigen::Vector3d psi, dw;
+		Eigen::Vector2d coef1, coef2;
+		coef1 = rods[k].bendingModulus * (stencils[k].prevCurvature - restCurvature.col(2*k))/ stencils[k].restlength;
+		coef2 = rods[k + 1].bendingModulus * (stencils[k].nextCurvature - restCurvature.col(2 * k + 1))/ stencils[k].restlength;
 
-		m1 = cos(rods[i].theta)* rods[i].u + sin(rods[i].theta)* rods[i].v;
-		m2 = -sin(rods[i].theta)* rods[i].v + cos(rods[i].theta)* rods[i].u;
+		Eigen::Vector3d e1, e2;
+		Eigen::Matrix3d dkb1, dkb2;
+		e1 = nodes[k + 1].pos - nodes[k].pos;
+		e2 = nodes[k + 2].pos - nodes[k + 1].pos;
+		dkb1 = (2 * VectorMath::crossProductMatrix(e2) + stencils[k].kb * e2.transpose()) / (restLength[k]*restLength[k+1] + e1.dot(e2));
+		dkb2 = (2 * VectorMath::crossProductMatrix(e1) + stencils[k].kb * e1.transpose()) / (restLength[k] * restLength[k + 1] + e1.dot(e2));
+		
+		Eigen::MatrixXd psi;
+		psi.resize(nparticles, 3);
 
-		// i,i,i
-
-		// i,i,i+1
-
-		// i,i+1,i+1
-
-
+		for (int i = k; i < nparticles; i++)
+		{
+			//compute domega
+			
+			// j=k
+			// j=k+1
+		}
 	}
 
-
+	for (int i = 0; i < nparticles; i++)
+	{
+		Eigen::Vector3d psi(0,0,0);
+		if (i > 1) psi -= stencils[i - 2].kb / 2 / rods[i - 1].length;
+		if (i > 0 && i <= nstencils) psi += (stencils[i-1].kb / 2 / rods[i].length - stencils[i-1].kb/2/rods[i-1].length);
+		if (i < nstencils) psi += stencils[i].kb / 2 / rods[i].length;
+		f.segment<3>(3 * i) += dEdtheta * psi;
+	}
 }
 
 void ElasticRod::computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
