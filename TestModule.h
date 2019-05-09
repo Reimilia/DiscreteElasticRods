@@ -14,22 +14,14 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 
-namespace TestModule
+class TestModule
 {
-	bool testEnergyDifferential(std::function<double()> computeEnergy, std::function<void(Eigen::VectorXd &)> computeGradient)
-	{
-		return false;
-	}
-	bool testEnergyHessian(std::function<void(Eigen::VectorXd &)> computeGradient, std::function<void(Eigen::SparseMatrix<double> &)> computeHessian)
-	{
-		return false;
-	}
-	bool testEnergyHessian(std::function<void(Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> computeGradientandHessian)
-	{
-		return false;
-	}
+public:
+	bool testEnergyDifferential(std::function<double()> computeEnergy, std::function<void(Eigen::VectorXd &)> computeGradient);
+	bool testEnergyHessian(std::function<void(Eigen::VectorXd &)> computeGradient, std::function<void(Eigen::SparseMatrix<double> &)> computeHessian);
+	bool testEnergyHessian(std::function<void(Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> computeGradientandHessian);
 
-}
+};
 
 
 #endif // !TESTMODULE_H

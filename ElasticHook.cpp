@@ -1,6 +1,9 @@
+
 #include "ElasticHook.h"
+#include "TestModule.h"
+
 #include <Eigen/SparseQR>
-using namespace Eigen;
+
 
 
 void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
@@ -127,43 +130,7 @@ void ElasticHook::updateRenderGeometry()
 	}
 	idx += nverts;
 
-	for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-	{
-		switch ((*it)->getType())
-		{
-		case SimParameters::CT_SPRING:
-		case SimParameters::CT_RIGIDROD:
-		case SimParameters::CT_ELASTICROD:
-		{
-			Vector3d sourcepos = particles_[(*it)->p1].pos;
-			Vector3d destpos = particles_[(*it)->p2].pos;
-
-			Vector3d vec = destpos - sourcepos;
-			Vector3d width = Eigen::Vector3d(vec.norm(), 0.08, 0.10);
-			Eigen::Vector3d c = Eigen::Vector3d((sourcepos[0] + destpos[0]) / 2.0, (sourcepos[1] + destpos[1]) / 2.0, 0);
-			Eigen::Vector3d rot = Eigen::Vector3d(0, 0, std::atan2(vec[1], vec[0]));
-
-			int nverts = rodV.rows();
-			int nfaces = rodF.rows();
-			for (int i = 0; i < nverts; i++)
-			{
-				Eigen::Vector3d pos = c + basescale * VectorMath::rotationMatrix(rot) * width.cwiseProduct(rodV.row(i).transpose());
-				verts.push_back(pos);
-			}
-			for (int i = 0; i < nfaces; i++)
-			{
-				faces.push_back(rodF.row(i).transpose() + idx * Eigen::Vector3i::Ones());
-			}
-
-			idx += nverts;
-			break;
-		}
-		default:
-			break;
-		}
-	}
-
-	int nparticles = particles_.size();
+	/*int nparticles = particles_.size();
 
 	for (int i = 0; i<nparticles; i++)
 	{
@@ -181,7 +148,7 @@ void ElasticHook::updateRenderGeometry()
 
 		idx += nverts;
 
-	}
+	}*/
 
 	renderQ.resize(verts.size(), 3);
 	//renderC.resize(vertexColors.size(), 3);
@@ -199,13 +166,9 @@ void ElasticHook::updateRenderGeometry()
 void ElasticHook::initSimulation()
 {
 	time_ = 0;
-	particles_.clear();
-	for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-		delete *it;
+	//particles_.clear();
 	for (std::vector<ElasticRod *>::iterator it = rods_.begin(); it != rods_.end(); ++it)
 		delete *it;
-	connectors_.clear();
-	bendingStencils_.clear();
 	loadMesh();
 }
 
@@ -255,144 +218,157 @@ void ElasticHook::tick()
 bool ElasticHook::simulateOneStep()
 {
 
-	VectorXd q, v, prevq;
-	buildConfiguration(q, v, prevq);
-	bool isSucceed = numericalIntegration(q, v, prevq);
-	unbuildConfiguration(q, v);
+	//Eigen::VectorXd q, v, prevq;
+	//buildConfiguration(q, v);
+	//bool isSucceed = numericalIntegration();
+	//unbuildConfiguration(q, v);
+
+	/*
+	We need one time step of Lagrangian for constranints
+	Then we need another time step for collision response.
+	*/
+	bool isSucceed = numericalIntegration();
 	time_ += params_.timeStep;
 	return (false || !isSucceed);
 }
 
 void ElasticHook::addParticle(double x, double y, double z)
 {
-	Vector3d newpos(x, y, z);
+	Eigen::Vector3d newpos(x, y, z);
 	double mass = params_.particleMass;
 	if (params_.particleFixed)
 		mass = std::numeric_limits<double>::infinity();
+}
 
-	int newid = particles_.size();
-	particles_.push_back(Particle(newpos, mass, params_.particleFixed, false));
-	int numparticles = particles_.size() - 1;
 
-	for (int i = 0; i<numparticles; i++)
+bool ElasticHook::numericalIntegration()
+{
+	// Unconstrained update
+	int nbodies = (int)bodies_.size();
+
+	std::vector<Eigen::Vector3d> oldthetas;
+	for (int bodyidx = 0; bodyidx < (int)bodies_.size(); bodyidx++)
 	{
-		if (particles_[i].inert)
-			continue;
-		Vector3d pos = particles_[i].pos;
-		double dist = (pos - newpos).norm();
-		if (dist <= params_.maxSpringDist)
+		RigidBodyInstance &body = *bodies_[bodyidx];
+		body.c += params_.timeStep*body.cvel;
+		Eigen::Matrix3d Rhw = VectorMath::rotationMatrix(params_.timeStep*body.w);
+		Eigen::Matrix3d Rtheta = VectorMath::rotationMatrix(body.theta);
+
+		Eigen::Vector3d oldtheta = body.theta;
+		body.theta = VectorMath::axisAngle(Rtheta*Rhw);
+		if (body.theta.dot(oldtheta) < 0 && oldtheta.norm() > M_PI / 2.0)
 		{
-			switch (params_.connectorType)
+			double oldnorm = oldtheta.norm();
+			oldtheta = (oldnorm - 2.0*M_PI)*oldtheta / oldnorm;
+		}
+		oldthetas.push_back(oldtheta);
+	}
+
+	int nrods = (int)rods_.size();
+	for (int k = 0; k < nrods; k++)
+	{
+		ElasticRod &rod = *rods_[k];
+		Eigen::VectorXd pos, vel;
+		rod.buildConfiguration(pos, vel);
+		pos += params_.timeStep * vel;
+		rod.unbuildConfiguration(pos, vel);	
+	}
+
+
+	
+	// Lagrangian, solved via Newton's method
+	
+	int nrods = (int)rods_.size();
+	for (int k = 0; k < nrods; k++)
+	{
+		ElasticRod &rod = *rods_[k];
+		
+		Eigen::SparseMatrix<double> gradG;
+		Eigen::VectorXd g, lambda;
+		rod.computeInextensibleConstraint(g, gradG);
+
+		Eigen::VectorXd F;
+		rod.computeCenterlineForces(F);
+
+		Eigen::VectorXd lambda;
+		int nRods = (int)rod.nodes.size() - 1;
+		lambda.resize(nRods);
+		lambda.setZero();
+
+		bool flag = newtonSolver(lambda, rod.computeLagrangeMultiple);
+		if (flag)
+		{
+			Eigen::VectorXd vel = params_.timeStep * (F + gradG.transpose()*lambda);
+			for (int i = 0; i < (int)(rod.nodes).size(); i++)
 			{
-			case SimParameters::CT_RIGIDROD:
-			{
-				connectors_.push_back(new RigidRod(newid, i, 0, dist));
-				break;
-			}
-			case SimParameters::CT_FLEXROD:
-			{
-				// 1. Add max{rodSegments, 2}-1 particles in between the rod
-				// 2. Connect them consequtively as springs (new_id, current_id, current_id+1, ..., i)
-				// 3. Add stencils for each pair of the spring
-				int prevprevid = newid;
-				int previd = newid;
-				int s = (params_.rodSegments > 2 ? params_.rodSegments : 2);
-				double rodrestlen = dist / s;
-				/*
-				for (int j = 1; j <= s; j++)
-				{
-				Eigen::Vector2d hingepos = j * 1.0 / s * pos + (s - j) * 1.0 / s * newpos;
-				int currentid = (int)particles_.size();
-				// Deal with last segment carefully!
-				if (j < s)
-				{
-				particles_.push_back(Particle(hingepos, 0.0, false, true));
-				}
-				else
-				{
-				currentid = i;
-				}
-				// Add springs
-				int nconnectors = (int)connectors_.size();
-				connectors_.push_back(new Spring(previd, currentid, params_.rodDensity * rodrestlen
-				, params_.rodStretchingStiffness / rodrestlen, rodrestlen, false));
-				if (j > 1)
-				{
-				// Add stencils
-				Spring &s1 = *(Spring *)connectors_[nconnectors];
-				Spring &s2 = *(Spring *)connectors_[nconnectors - 1];
-				double rodrealstiffness = params_.rodBendingStiffness / (s1.restlen + s2.restlen);
-				int bendidx = (int)bendingStencils_.size();
-				bendingStencils_.push_back(BendingStencil(prevprevid, previd, currentid, rodrealstiffness));
-				//Associate stencil with two springs
-				connectors_[nconnectors]->associatedBendingStencils.insert(bendidx);
-				connectors_[nconnectors - 1]->associatedBendingStencils.insert(bendidx);
-				}
-				prevprevid = previd;
-				previd = currentid;
-				}*/
-				break;
-			}
-			default:
-				break;
+				rod.nodes[i].vel += vel.segment<3>(3 * i) / rod.nodes[i].mass;
 			}
 		}
+		else
+		{
+			std::cout << "Lagrangian blow up!\n" << std::endl;
+		}
+
+		rod.updateAfterTimeIntegration();
+
 	}
-}
 
-double ElasticHook::getTotalParticleMass(int idx)
-{
-	return 0.0;
-}
+	Eigen::VectorXd cForce(3 * nbodies);
+	Eigen::VectorXd thetaForce(3 * nbodies);
+	cForce.setZero();
+	thetaForce.setZero();
+	//computeForces(cForce, thetaForce);
 
-void ElasticHook::buildConfiguration(VectorXd &q, VectorXd &v, VectorXd &prevq)
-{
+	for (int bodyidx = 0; bodyidx < (int)bodies_.size(); bodyidx++)
+	{
+		RigidBodyInstance &body = *bodies_[bodyidx];
+		Eigen::Matrix3d Mi = body.getTemplate().getInertiaTensor();
 
-}
+		body.cvel += params_.timeStep*cForce.segment<3>(3 * bodyidx) / body.density / body.getTemplate().getVolume();
 
-void ElasticHook::unbuildConfiguration(const VectorXd &q, const VectorXd &v)
-{
+		Eigen::Vector3d newwguess(body.w);
 
-}
+		int iter = 0;
+		for (iter = 0; iter < params_.NewtonMaxIters; iter++)
+		{
+			Eigen::Vector3d term1 = (-VectorMath::TMatrix(-params_.timeStep*newwguess).inverse() * VectorMath::TMatrix(oldthetas[bodyidx])).transpose() * Mi * body.density * newwguess;
+			Eigen::Vector3d term2 = (VectorMath::TMatrix(params_.timeStep*body.w).inverse()*VectorMath::TMatrix(oldthetas[bodyidx])).transpose() * Mi * body.density * body.w;
+			Eigen::Vector3d term3 = -params_.timeStep * thetaForce.segment<3>(3 * bodyidx);
+			Eigen::Vector3d fval = term1 + term2 + term3;
+			if (fval.norm() / body.density / Mi.trace() <= params_.NewtonTolerance)
+				break;
 
-int ElasticHook::getNumRigidRods()
-{
-	return 0;
-}
+			Eigen::Matrix3d Df = (-VectorMath::TMatrix(-params_.timeStep*newwguess).inverse() * VectorMath::TMatrix(body.theta)).transpose() * Mi * body.density;
 
-bool ElasticHook::numericalIntegration(VectorXd &q, VectorXd &v, VectorXd &prevq)
-{
+			Eigen::Vector3d deltaw = Df.inverse() * (-fval);
+			newwguess += deltaw;
+		}
+		//        std::cout << "Converged in " << iter << " Newton iterations" << std::endl;
+		body.w = newwguess;
+
+	}
+
+
+
+
 	return false;
 }
 
 
-bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeFAndGradF)
+bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeFAndGradF)
 {
 	double ratio = 1e-6;
 	for (int i = 0; i<params_.NewtonMaxIters; i++)
 	{
-		//        bool isSuccess = takeOneStep(ratio, x, x0, _computeFAndGradF);
-		//        if(!isSuccess)
-		//        {
-		//            std::cout<<"Failed to update the position"<<std::endl;
-		//            return false;
-		//        }
-		//        Eigen::VectorXd F;
-		//        _computeFAndGradF(x, x0, F, NULL);
-		//        if(F.norm()<params_.NewtonTolerance)
-		//        {
-		//            std::cout<<"Optimal station reached!!"<<std::endl;
-		//            return true;
-		//        }
 		Eigen::VectorXd F, dx;
 		Eigen::SparseMatrix<double> gradF;
-		_computeFAndGradF(x, F, &gradF);
+		_computeFAndGradF(x, F, gradF);
 		if (F.norm()<params_.NewtonTolerance)
 		{
 			//std::cout<<"Optimal station reached!!"<<std::endl;
 			return true;
 		}
-		Eigen::SparseQR<SparseMatrix<double>, COLAMDOrdering<int>> solver;
+		Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
 		solver.compute(gradF);
 		dx = solver.solve(-F);
 		x = x + dx;
@@ -401,62 +377,10 @@ bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::Vec
 	return true;
 }
 
-bool ElasticHook::takeOneStep(double &ratio, Eigen::VectorXd &x, std::function<void(Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeFAndGradF)
-{
-	int i;
-	for (i = 0; i<1e2; i++)
-	{
-		Eigen::VectorXd F, dx;
-		Eigen::SparseMatrix<double> gradF, I;
-		_computeFAndGradF(x, F, &gradF);
-		I.resize(x.size(), x.size());
-		I.setIdentity();
-		gradF += ratio * I;
-		if (F.norm()<params_.NewtonTolerance)
-			break;
-		Eigen::SparseQR<SparseMatrix<double>, COLAMDOrdering<int>> solver;
-		solver.compute(gradF);
-		dx = solver.solve(-F);
-		Eigen::VectorXd newX = x + dx;
 
-		Eigen::VectorXd newF;
-		_computeFAndGradF(newX, newF, NULL);
-
-
-		if (newF.norm() <= F.norm())
-		{
-			//std::cout<<"Sucessful update: "<<std::endl;
-			//std::cout<<"Position Change: "<<dx.norm()<<" Norm of old force: "<<F.norm()<<" Norm of new force: "<<newF.norm()<<std::endl;
-			x = newX;
-			ratio = std::max(ratio / 2, 1e-6);
-			break;
-		}
-		else
-		{
-
-			//std::cout<<"Norm of old force: "<<F.norm()<<" Norm of new force: "<<newF.norm()<<" lambda now: "<<ratio<<std::endl;
-			ratio = ratio * 2;
-		}
-	}
-	if (i<1e2)
-		return true;
-	else
-		return false;
-}
-
-
-void ElasticHook::computeForceAndHessian(const VectorXd &q, const VectorXd &qprev, Eigen::VectorXd &F, SparseMatrix<double> &H)
+void ElasticHook::computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
 {
 	
-}
-
-void ElasticHook::processGravityForce(VectorXd &F)
-{
-}
-
-
-void ElasticHook::processFloorForce(const VectorXd &q, const VectorXd &qprev, VectorXd &F, std::vector<Eigen::Triplet<double> > &H)
-{
 }
 
 

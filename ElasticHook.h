@@ -1,11 +1,18 @@
+#ifndef ELASTICHOOK_H
+#define ELASTICHOOK_H
+
+#include <deque>
+
+#include <Eigen/Sparse>
+#include <Eigen/StdVector>
+
 #include "PhysicsHook.h"
 #include "SceneObjects.h"
-#include <deque>
 #include "SimParameters.h"
 #include "VectorMath.h"
 #include "ElasticRod.h"
-#include <Eigen/Sparse>
-#include <Eigen/StdVector>
+#include "RigidBodyInstance.h"
+#include "RigidBodyTemplate.h"
 
 struct MouseClick
 {
@@ -57,6 +64,8 @@ private:
 
 
 	// Load sphere and rod model
+	// These two elements are only for rendering
+	// So we will not assign them any rigid body property
 	Eigen::MatrixXd ballV;
 	Eigen::MatrixXi ballF;
 	Eigen::MatrixXd rodV;
@@ -67,12 +76,15 @@ private:
 	SimParameters params_;
 	double time_;
 
-	//TODO: replace each conncector_ as rigid body template
-	//Note each connector for elastic rod will have its own bishop frame.
-	std::vector<Particle, Eigen::aligned_allocator<Particle> > particles_;
-	std::vector<Connector *> connectors_;
-	std::vector<BendingStencil> bendingStencils_;
+	//std::vector<Particle, Eigen::aligned_allocator<Particle> > particles_;
 
+	//Rigid Body Elements
+    std::vector<RigidBodyTemplate *> templates_;
+    std::vector<RigidBodyInstance *> bodies_;
+
+	//Elastic Rods Elements
+	//Note that the model assumes only connecting points are d.o.f.
+	//So I use a lazy way to render the rods_
 	std::vector<ElasticRod *> rods_;
 
 	std::mutex message_mutex;
@@ -85,16 +97,10 @@ private:
 	//Eigen::SparseMatrix<double> Minv_;
 
 	void addParticle(double x, double y, double z);
-	double getTotalParticleMass(int idx);
-	int getNumRigidRods();
-
-
-	void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &v, Eigen::VectorXd &qprev);
-	void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &v);
 
 	//void computeMassInverse(Eigen::SparseMatrix<double> &Minv);
 	//void computeMass(Eigen::SparseMatrix<double> &M);
-	bool numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &v, Eigen::VectorXd &prevq);
+	bool numericalIntegration();
 
 	//void updatebyVelocityVerletUnconstraint(Eigen::VectorXd &q, Eigen::VectorXd &v);
 	//void updatebyImpliciyMidpointUnconstraint(Eigen::VectorXd &q, Eigen::VectorXd &v, const Eigen::VectorXd prevq);
@@ -106,7 +112,8 @@ private:
 	void processGravityForce(Eigen::VectorXd &F);
 	void processFloorForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
 	
-	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeForceAndHessian);
-	bool takeOneStep(double &ratio, Eigen::VectorXd &x, std::function<void(Eigen::VectorXd, Eigen::VectorXd &, Eigen::SparseMatrix<double> *)> _computeForceAndHessian);
+	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeForceAndHessian);
 
 };
+
+#endif

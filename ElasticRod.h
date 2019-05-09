@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include "VectorMath.h"
 #include "MatrixMath.h"
 #include "SceneObjects.h"
@@ -21,8 +22,12 @@ class ElasticRod
 {
 public:
 	ElasticRod();
-	ElasticRod(std::vector <Particle, Eigen::aligned_allocator<Particle>> &nodes, SimParameters para, BoundaryCondition bc, std::vector<double> &initialTheta);
+	ElasticRod(std::vector <Particle, Eigen::aligned_allocator<Particle>> &nodes, SimParameters para);
 	~ElasticRod();
+
+	// Assign Boundary Condition
+	bool assignClampedBoundaryCondition(double theta0, double theta1);
+	bool assignRigidBodyBoundaryCondition(int idx0, int idx1);
 
 	// Tell the rendering program where a point belongs to a rod element need to be rendered in world coordinate.
 	// This program shall interpolate and return the coordinate. The rotation is 
@@ -38,12 +43,24 @@ public:
 
 	// Assemble Centerline Forces from potential energy
 	void computeCenterlineForces(Eigen::VectorXd &);
+
+	// Compute Inextensible constraint
+	void computeInextensibleConstraint(Eigen::VectorXd &, Eigen::SparseMatrix<double> &);
+
+	
+	void computeLagrangeMultiple(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &);
 		
 	// Update rods and stencil information based on new configuration of the position
 	void updateAfterTimeIntegration();
 
 	// Particles
 	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
+
+	// Rigid body id, if free or clamped only, -1 will be put here;
+	int leftRigidBody, rightRigidBody;
+
+	// Template point for two ends
+	Eigen::Vector3d leftTemplateCoord, rightTemplateCoord;
 
 private:
 	// Rest position and length

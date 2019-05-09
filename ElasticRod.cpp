@@ -11,7 +11,7 @@ ElasticRod::ElasticRod()
 	stencils.shrink_to_fit();
 }
 
-ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>> &particles, SimParameters para, BoundaryCondition bc, std::vector<double> &initialTheta)
+ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>> &particles, SimParameters para)
 {
 	//Create rods and bending stencils 
 	int nNodes = (int)particles.size();
@@ -47,6 +47,8 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 		stencils[i].length = l;
 		stencils[i].restlength = l;
 	}
+	
+	leftRigidBody = rightRigidBody = -1;
 
 	params = para;
 
@@ -67,7 +69,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	rods[0].u = u0;
 	rods[0].v = v0;
 
-	bcStats = bc;
+	bcStats = BC_FREE;
 	
 	// Compute the rest material frame
 	updateBishopFrame();
@@ -87,6 +89,26 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 ElasticRod::~ElasticRod()
 {
+}
+
+bool ElasticRod::assignClampedBoundaryCondition(double theta0, double theta1)
+{
+	// Ususally theta0=0
+
+	bcStats = BC_FIXED_END;
+	rods[0].theta = theta0;
+	rods[(int)rods.size()-1].theta = theta1;
+	updateQuasiStaticFrame();
+	updateMaterialCurvature();
+	return true;
+}
+
+bool ElasticRod::assignRigidBodyBoundaryCondition(int idx0, int idx1)
+{
+	bcStats = BC_RIGIDBODY_END;
+	leftRigidBody = idx0;
+	rightRigidBody = idx1;
+	return true;
 }
 
 const Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
@@ -170,6 +192,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		2 * beta * (rods[nstencils].theta - rods[nstencils - 1].theta)) / stencils[nstencils - 1].restlength;
 
 	f.resize(3 * nparticles);
+	f.setZero();
 
 	for (int k = 0; k < nstencils; k++)
 	{
@@ -184,16 +207,87 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		dkb1 = (2 * VectorMath::crossProductMatrix(e2) + stencils[k].kb * e2.transpose()) / (restLength[k]*restLength[k+1] + e1.dot(e2));
 		dkb2 = (2 * VectorMath::crossProductMatrix(e1) + stencils[k].kb * e1.transpose()) / (restLength[k] * restLength[k + 1] + e1.dot(e2));
 		
-		Eigen::MatrixXd psi;
-		psi.resize(nparticles, 3);
 
-		for (int i = k; i < nparticles; i++)
+		for (int i = 0; i <= k+3; i++)
 		{
 			//compute domega
-			
+			Eigen::Vector3d psi(0,0,0);
+			Eigen::MatrixXd M;
+			M.resize(2, 3);
 			// j=k
-			// j=k+1
+			M.row(1) = cos(rods[k].theta)* rods[k].u + sin(rods[k].theta)* rods[k].v;
+			M.row(0) = sin(rods[k].theta)* rods[k].v - cos(rods[k].theta)* rods[k].u;
+			switch (i - k)
+			{
+			case 0:
+				M = M * dkb1;
+				break;
+			case 1:
+				M = M * (-dkb1 - dkb2);
+				break;
+			case 2:
+				M = M * dkb2;
+				break;
+			default:
+				M.setZero();
+				break;
+			}
+			if (i >= 2 && i <= k + 2)
+			{
+				psi -= stencils[i - 2].kb / restLength[i - 2];
+			}
+			if (i >= 1 && i <= k + 1)
+			{
+				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
+			}
+			if (i <= k)
+			{
+				psi = psi + stencils[i].kb / restLength[i];
+			}
+			psi /= 2;
+
+			//Assemble force (watch out for minus sign!)
+			f.segment<3>(3 * i) += (-(M-J*stencils[k].prevCurvature*psi.transpose()).transpose()*coef1);
+			
+			//j=k+1
+			if (i >= nparticles) continue;
+			M.row(1) = cos(rods[k+1].theta)* rods[k+1].u + sin(rods[k+1].theta)* rods[k+1].v;
+			M.row(0) = sin(rods[k+1].theta)* rods[k+1].v - cos(rods[k+1].theta)* rods[k+1].u;
+			switch (i - k)
+			{
+			case 0:
+				M = M * dkb1;
+				break;
+			case 1:
+				M = M * (-dkb1 - dkb2);
+				break;
+			case 2:
+				M = M * dkb2;
+				break;
+			default:
+				M.setZero();
+				break;
+			}
+			if (i >= 2 && i <= k + 1)
+			{
+				psi -= stencils[i - 2].kb / restLength[i - 1];
+			}
+			if (i>=1 && i <= k)
+			{
+				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
+			}
+			if (i <= k - 1)
+			{
+				psi = psi + stencils[i].kb / restLength[i];
+			}
+			psi /= 2;
+
+			//Assemble force (watch out for minus sign!)
+			f.segment<3>(3 * i) += (-(M - J * stencils[k].nextCurvature*psi.transpose()).transpose()*coef2);
+
 		}
+
+
 	}
 
 	for (int i = 0; i < nparticles; i++)
@@ -204,6 +298,47 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		if (i < nstencils) psi += stencils[i].kb / 2 / rods[i].length;
 		f.segment<3>(3 * i) += dEdtheta * psi;
 	}
+}
+
+void ElasticRod::computeInextensibleConstraint(Eigen::VectorXd &g, Eigen::SparseMatrix<double> &gradG)
+{
+	//Assemble into vector value and its gradient
+	int nrods = (int)rods.size();
+	g.resize(nrods);
+	g.setZero();
+
+	std::vector<Eigen::Triplet<double> > dgTriplet;
+	int rodIdx = 0;
+
+	for (int i = 0; i < nrods; i++)
+	{
+		
+		auto rod = *(RigidRod *)connectors_[i];
+		Eigen::Vector2d p1 = q.segment<2>(2 * rod.p1);
+		Eigen::Vector2d p2 = q.segment<2>(2 * rod.p2);
+
+		g(rodIdx) = 
+
+		if (gradG)
+		{
+			Eigen::Vector2d localF = 2 * (p1 - p2);
+
+			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p1, localF(0)));
+			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p1 + 1, localF(1)));
+			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p2, -localF(0)));
+			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p2 + 1, -localF(1)));
+		}
+		rodIdx++;
+	}
+	if (gradG)
+	{
+		gradG->resize(nRods, q.size());
+		gradG->setFromTriplets(dgTriplet.begin(), dgTriplet.end());
+	}
+}
+
+void ElasticRod::computeLagrangeMultiple(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double>&)
+{
 }
 
 void ElasticRod::computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
@@ -311,6 +446,12 @@ void ElasticRod::updateQuasiStaticFrame()
 		case BC_FREE:
 			break;
 		case BC_FIXED_END:
+			/*
+			Change matrix as:
+			1 0 0 ...
+			....
+			... 0 0 1 
+			*/
 			upperH[0] = 0;
 			centerH[0] = centerH[nrods - 1] = 1.0;
 			lowerH[nrods - 1] = 0;
