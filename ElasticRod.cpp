@@ -300,47 +300,6 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 	}
 }
 
-void ElasticRod::computeInextensibleConstraint(Eigen::VectorXd &g, Eigen::SparseMatrix<double> &gradG)
-{
-	//Assemble into vector value and its gradient
-	int nrods = (int)rods.size();
-	g.resize(nrods);
-	g.setZero();
-
-	std::vector<Eigen::Triplet<double> > dgTriplet;
-	int rodIdx = 0;
-
-	for (int i = 0; i < nrods; i++)
-	{
-		
-		auto rod = *(RigidRod *)connectors_[i];
-		Eigen::Vector2d p1 = q.segment<2>(2 * rod.p1);
-		Eigen::Vector2d p2 = q.segment<2>(2 * rod.p2);
-
-		g(rodIdx) = 
-
-		if (gradG)
-		{
-			Eigen::Vector2d localF = 2 * (p1 - p2);
-
-			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p1, localF(0)));
-			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p1 + 1, localF(1)));
-			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p2, -localF(0)));
-			dgTriplet.push_back(Eigen::Triplet<double>(rodIdx, 2 * rod.p2 + 1, -localF(1)));
-		}
-		rodIdx++;
-	}
-	if (gradG)
-	{
-		gradG->resize(nRods, q.size());
-		gradG->setFromTriplets(dgTriplet.begin(), dgTriplet.end());
-	}
-}
-
-void ElasticRod::computeLagrangeMultiple(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double>&)
-{
-}
-
 void ElasticRod::computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
 {
 	/*

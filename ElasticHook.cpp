@@ -227,6 +227,7 @@ bool ElasticHook::simulateOneStep()
 	We need one time step of Lagrangian for constranints
 	Then we need another time step for collision response.
 	*/
+	computeMassInverse(mInv_);
 	bool isSucceed = numericalIntegration();
 	time_ += params_.timeStep;
 	return (false || !isSucceed);
@@ -239,6 +240,82 @@ void ElasticHook::addParticle(double x, double y, double z)
 	if (params_.particleFixed)
 		mass = std::numeric_limits<double>::infinity();
 }
+
+void ElasticHook::buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel)
+{
+	int nconfigurations = 0;
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		nconfigurations += (3 * rods_[i]->nodes.size());
+	}
+
+	pos.resize(nconfigurations);
+	vel.resize(nconfigurations);
+	int offset = 0;
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		Eigen::VectorXd q,v;
+		rods_[i]->buildConfiguration(q,v);
+		for (int k = 0; k < q.size(); k++)
+		{
+			pos(offset + k) = q(k);
+			vel(offset + k) = v(k);
+		}
+		offset += q.size();
+	}
+}
+
+void ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::VectorXd &vel)
+{
+	int offset = 0;
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		Eigen::VectorXd q, v;
+		int ndofs = 3 * rods_[i]->nodes.size();
+		for (int k = 0; k < ndofs; k++)
+		{
+			q(k) = pos(offset + k);
+			v(k) = vel(offset + k);
+		}
+		rods_[i]->unbuildConfiguration(q, v);
+		offset += ndofs;
+	}
+}
+
+void ElasticHook::computeMassInverse(Eigen::SparseMatrix<double>& mInv)
+{
+	// First rods, then rigid bodies
+	
+	std::vector<Eigen::Triplet<double>> massInvTriplet;
+	int offset = 0;
+
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		ElasticRod & rod = *rods_[i];
+		int nParticles = (int)rod.nodes.size();
+		for (int k = 0; k < nParticles; k++)
+		{
+			double massInverse;
+			if (rod.nodes[k].fixed)
+				massInverse = 0;
+			else
+				massInverse = 1.0 / rod.nodes[k].mass;
+			for (int j = 0; j < 3; j++)
+			{
+				massInvTriplet.push_back(Eigen::Triplet<double>(3 * (offset + k) + j, 3 * (offset + k) + j, massInverse));
+			}
+		}
+		offset += 3 * nParticles;
+	}
+
+
+	// TODO: assemble rigid body mass inverse
+
+	
+	mInv.resize(offset,offset);
+	mInv.setFromTriplets(massInvTriplet.begin(), massInvTriplet.end());
+}
+
 
 
 bool ElasticHook::numericalIntegration()
@@ -261,6 +338,7 @@ bool ElasticHook::numericalIntegration()
 			double oldnorm = oldtheta.norm();
 			oldtheta = (oldnorm - 2.0*M_PI)*oldtheta / oldnorm;
 		}
+		body.oldtheta = oldtheta;
 		oldthetas.push_back(oldtheta);
 	}
 
@@ -278,39 +356,25 @@ bool ElasticHook::numericalIntegration()
 	
 	// Lagrangian, solved via Newton's method
 	
-	int nrods = (int)rods_.size();
-	for (int k = 0; k < nrods; k++)
+	Eigen::VectorXd F;
+	computeForce(F);
+
+	Eigen::SparseMatrix<double> gradG;
+	Eigen::VectorXd g, lambda;
+	computeContraintsAndGradient(g, gradG);
+
+	lambda.resizeLike(g);
+	lambda.setZero();
+
+
+	bool flag = newtonSolver(lambda, [this, F](Eigen::VectorXd lambda, Eigen::VectorXd &force, Eigen::SparseMatrix<double> &gradF)
 	{
-		ElasticRod &rod = *rods_[k];
-		
-		Eigen::SparseMatrix<double> gradG;
-		Eigen::VectorXd g, lambda;
-		rod.computeInextensibleConstraint(g, gradG);
-
-		Eigen::VectorXd F;
-		rod.computeCenterlineForces(F);
-
-		Eigen::VectorXd lambda;
-		int nRods = (int)rod.nodes.size() - 1;
-		lambda.resize(nRods);
-		lambda.setZero();
-
-		bool flag = newtonSolver(lambda, rod.computeLagrangeMultiple);
-		if (flag)
-		{
-			Eigen::VectorXd vel = params_.timeStep * (F + gradG.transpose()*lambda);
-			for (int i = 0; i < (int)(rod.nodes).size(); i++)
-			{
-				rod.nodes[i].vel += vel.segment<3>(3 * i) / rod.nodes[i].mass;
-			}
-		}
-		else
-		{
-			std::cout << "Lagrangian blow up!\n" << std::endl;
-		}
-
-		rod.updateAfterTimeIntegration();
-
+		this->computeLagrangeMultiple(lambda, F, force, gradF);
+	});
+	if (flag)
+	{
+		//TODO: update accordingly
+		;
 	}
 
 	Eigen::VectorXd cForce(3 * nbodies);
@@ -331,8 +395,8 @@ bool ElasticHook::numericalIntegration()
 		int iter = 0;
 		for (iter = 0; iter < params_.NewtonMaxIters; iter++)
 		{
-			Eigen::Vector3d term1 = (-VectorMath::TMatrix(-params_.timeStep*newwguess).inverse() * VectorMath::TMatrix(oldthetas[bodyidx])).transpose() * Mi * body.density * newwguess;
-			Eigen::Vector3d term2 = (VectorMath::TMatrix(params_.timeStep*body.w).inverse()*VectorMath::TMatrix(oldthetas[bodyidx])).transpose() * Mi * body.density * body.w;
+			Eigen::Vector3d term1 = (-VectorMath::TMatrix(-params_.timeStep*newwguess).inverse() * VectorMath::TMatrix(body.oldtheta)).transpose() * Mi * body.density * newwguess;
+			Eigen::Vector3d term2 = (VectorMath::TMatrix(params_.timeStep*body.w).inverse()*VectorMath::TMatrix(body.oldtheta)).transpose() * Mi * body.density * body.w;
 			Eigen::Vector3d term3 = -params_.timeStep * thetaForce.segment<3>(3 * bodyidx);
 			Eigen::Vector3d fval = term1 + term2 + term3;
 			if (fval.norm() / body.density / Mi.trace() <= params_.NewtonTolerance)
@@ -343,7 +407,7 @@ bool ElasticHook::numericalIntegration()
 			Eigen::Vector3d deltaw = Df.inverse() * (-fval);
 			newwguess += deltaw;
 		}
-		//        std::cout << "Converged in " << iter << " Newton iterations" << std::endl;
+		//std::cout << "Converged in " << iter << " Newton iterations" << std::endl;
 		body.w = newwguess;
 
 	}
@@ -354,6 +418,103 @@ bool ElasticHook::numericalIntegration()
 	return false;
 }
 
+void ElasticHook::computeForce(Eigen::VectorXd & F)
+{
+	//Assemble Centerline Force 
+	//TODO: Compute External Forces
+	int nconfigurations = 0;
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		nconfigurations += (3 * rods_[i]->nodes.size());
+	}
+
+	F.resize(nconfigurations);
+	int offset = 0;
+
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		int nvars = rods_[i]->nodes.size() * 3;
+		Eigen::VectorXd f;
+		rods_[i]->computeCenterlineForces(f);
+		for (int k = 0; k < f.size(); k++)
+		{
+			F(offset + k) = f(k);
+		}
+		offset += nvars;
+	} 
+	//TODO: Assemble Rigid body forces
+
+}
+
+void ElasticHook::computeContraintsAndGradient(Eigen::VectorXd &g, Eigen::SparseMatrix<double>& gradG)
+{
+	int nConfigurations = 0, nConstraints = 0;
+
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		nConfigurations += (3 * rods_[i]->nodes.size());
+		nConstraints += (3 * (rods_[i]->nodes.size()-1));
+	}
+
+	g.resize(nConstraints);
+
+
+	std::vector<Eigen::Triplet<double> > dgTriplet;
+
+	// Inextensible Constarint
+	int particleOffset = 0;
+	int rodsOffset = 0;
+	for (int rodidx= 0; rodidx < (int)rods_.size(); rodidx++)
+	{
+		ElasticRod &rod = *rods_[rodidx];
+		int nparticles = (int)rod.nodes.size();
+		for (int i = 0; i < nparticles - 1; i++)
+		{
+			Eigen::Vector3d e1, e2;
+			e1 = rod.nodes[i].pos;
+			e2 = rod.nodes[i].pos;
+			g(rodsOffset + i) = (e2 - e1).squaredNorm() - rod.restLength(i) * rod.restLength(i);
+
+			Eigen::Vector3d localF = 2 * (e1 - e2);
+			for (int k = 0; k < 3; k++)
+			{
+				dgTriplet.push_back(Eigen::Triplet<double>(rodsOffset + i, 3 * (particleOffset + i) + k, localF(k)));
+				dgTriplet.push_back(Eigen::Triplet<double>(rodsOffset + i, 3 * (particleOffset + i + 1) + k, -localF(k)));
+
+			}
+		}
+		particleOffset += nparticles;
+		rodsOffset += (nparticles - 1);
+	}
+	
+	// TODO: deal with rigid body coupling constarint
+
+	gradG.resize(nConstraints, nConfigurations);
+	gradG.setFromTriplets(dgTriplet.begin(), dgTriplet.end());
+}
+
+void ElasticHook::computeLagrangeMultiple(Eigen::VectorXd &lambda, const Eigen::VectorXd &constF, Eigen::VectorXd &f, Eigen::SparseMatrix<double>&gradF)
+{
+
+	Eigen::VectorXd g;
+	Eigen::SparseMatrix<double> gradG;
+	computeContraintsAndGradient(g, gradG);
+	
+	// Change pos
+	Eigen::VectorXd prevPos;
+
+
+
+	computeContraintsAndGradient(f, gradF);
+	
+	// Unchange pos
+
+
+	
+	Eigen::SparseMatrix<double> W;
+	W = params_.timeStep * params_.timeStep * mInv_ *gradG.transpose();
+	gradF = gradF * W;
+}
 
 bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeFAndGradF)
 {
@@ -377,11 +538,11 @@ bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::Vec
 	return true;
 }
 
-
+/*
 void ElasticHook::computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
 {
 	
-}
+}*/
 
 
 

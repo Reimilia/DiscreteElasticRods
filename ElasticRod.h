@@ -43,12 +43,6 @@ public:
 
 	// Assemble Centerline Forces from potential energy
 	void computeCenterlineForces(Eigen::VectorXd &);
-
-	// Compute Inextensible constraint
-	void computeInextensibleConstraint(Eigen::VectorXd &, Eigen::SparseMatrix<double> &);
-
-	
-	void computeLagrangeMultiple(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &);
 		
 	// Update rods and stencil information based on new configuration of the position
 	void updateAfterTimeIntegration();
@@ -62,12 +56,13 @@ public:
 	// Template point for two ends
 	Eigen::Vector3d leftTemplateCoord, rightTemplateCoord;
 
-private:
 	// Rest position and length
 	Eigen::MatrixXd restPos;
 	Eigen::VectorXd  restLength;
 	// Rest material curvature
 	Eigen::MatrixXd restCurvature;
+
+private:
 
 	// Material Frame (Relatively for 0-th index point)
 	Eigen::Vector3d u0, v0, t0;

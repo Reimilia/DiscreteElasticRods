@@ -16,6 +16,7 @@ public:
 
     Eigen::Vector3d c;
     Eigen::Vector3d theta;
+	Eigen::Vector3d oldtheta;
 
     Eigen::Vector3d cvel;
     Eigen::Vector3d w;

@@ -94,23 +94,28 @@ private:
 	Eigen::MatrixXi renderF;
 	Eigen::MatrixXd renderC;
 
-	//Eigen::SparseMatrix<double> Minv_;
+	Eigen::SparseMatrix<double> mInv_;
 
 	void addParticle(double x, double y, double z);
 
-	//void computeMassInverse(Eigen::SparseMatrix<double> &Minv);
+	void buildConfiguration(Eigen::VectorXd &, Eigen::VectorXd &);
+	void unbuildConfiguration(const Eigen::VectorXd &, const Eigen::VectorXd &);
+
+	void computeMassInverse(Eigen::SparseMatrix<double> &Minv);
 	//void computeMass(Eigen::SparseMatrix<double> &M);
 	bool numericalIntegration();
 
 	//void updatebyVelocityVerletUnconstraint(Eigen::VectorXd &q, Eigen::VectorXd &v);
 	//void updatebyImpliciyMidpointUnconstraint(Eigen::VectorXd &q, Eigen::VectorXd &v, const Eigen::VectorXd prevq);
 
-	void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H);
+	void computeForce(Eigen::VectorXd &F);
+	//void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H);
 
-	//void computeContraintsAndGradient(const Eigen::VectorXd q, Eigen::VectorXd &F, Eigen::SparseMatrix<double> *gradF);
+	void computeContraintsAndGradient(Eigen::VectorXd &F, Eigen::SparseMatrix<double> &gradF);
+	void computeLagrangeMultiple(Eigen::VectorXd &, const Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &);
 
-	void processGravityForce(Eigen::VectorXd &F);
-	void processFloorForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
+	//void processGravityForce(Eigen::VectorXd &F);
+	//void processFloorForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
 	
 	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeForceAndHessian);
 
