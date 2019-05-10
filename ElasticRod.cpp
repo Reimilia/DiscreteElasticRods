@@ -80,7 +80,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	// Compute the twist via quasi static assumption
 	updateMaterialCurvature();
-	restCurvature.resize(3, 2*(nNodes - 2));
+	restCurvature.resize(2, 2*(nNodes - 2));
 	for (int i = 0; i < nNodes - 2; i++)
 	{
 		restCurvature.col(2 * i) = stencils[i].prevCurvature;
@@ -157,7 +157,7 @@ bool ElasticRod::unbuildConfiguration(const Eigen::VectorXd & pos, const Eigen::
 	int nparticles = (int)nodes.size();
 	for (int i = 0; i < nparticles; i++)
 	{
-		nodes[i].prevpos = pos;
+		nodes[i].prevpos = nodes[i].pos;
 		nodes[i].pos = pos.segment<3>(3 * i);
 		nodes[i].vel = vel.segment<3>(3 * i);
 	}
