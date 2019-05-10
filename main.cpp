@@ -58,6 +58,7 @@ bool keyCallback(igl::opengl::glfw::Viewer &viewer, unsigned int key, int modifi
 {
 	if (key == ' ')
 	{
+		std::cout << "Start Simulation via spacebar!\n";
 		toggleSimulation();
 		return true;
 	}

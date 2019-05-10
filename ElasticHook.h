@@ -118,6 +118,7 @@ private:
 	
 	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeForceAndHessian);
 
+	void testProcess();
 };
 
 #endif

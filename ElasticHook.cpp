@@ -25,6 +25,12 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 			std::string filePath = igl::file_dialog_save();
 			saveConfiguration(filePath);
 		}
+
+		//Test Part
+		if (ImGui::Button("Test", ImVec2(-1, 0)))
+		{
+			testProcess();
+		}
 	}
 	if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
 	{
@@ -286,7 +292,10 @@ void ElasticHook::addParticle(double x, double y, double z)
 	//RigidBodyInstance *rbi = new RigidBodyInstance(*ballTemplate_, newpos, zero, zero, zero, 1);
 	//bodies_.push_back(rbi);
 
-	particles_.push_back(Particle(newpos, 1, true, false));
+	particles_.push_back(Particle(newpos, 1, false, false));
+
+	particles_[0].fixed = true;
+	particles_[(int)particles_.size() - 1].fixed = true;
 
 	if ((int)rods_.size()>0)
 	{
@@ -298,6 +307,8 @@ void ElasticHook::addParticle(double x, double y, double z)
 	{
 		rods_.push_back(new ElasticRod(particles_, params_));
 	}
+
+	particles_[(int)particles_.size() - 1].fixed = false;
 
 }
 
@@ -332,6 +343,8 @@ void ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::
 	{
 		Eigen::VectorXd q, v;
 		int ndofs = 3 * rods_[i]->nodes.size();
+		q.resize(ndofs);
+		v.resize(ndofs);
 		for (int k = 0; k < ndofs; k++)
 		{
 			q(k) = pos(offset + k);
@@ -415,11 +428,17 @@ bool ElasticHook::numericalIntegration()
 
 	Eigen::VectorXd pos, vel;
 	buildConfiguration(pos, vel);
+
+	
 	
 	// Lagrangian, solved via Newton's method
 	
 	Eigen::VectorXd F;
+	F.resizeLike(pos);
+	F.setZero();
 	computeForce(F);
+
+	//std::cout << F.size() << std::endl;
 
 	Eigen::SparseMatrix<double> gradG;
 	Eigen::VectorXd g, lambda;
@@ -429,15 +448,19 @@ bool ElasticHook::numericalIntegration()
 	lambda.setZero();
 
 
-	bool flag = newtonSolver(lambda, [this, &pos, &vel, &F](Eigen::VectorXd lambda , Eigen::VectorXd &F, Eigen::SparseMatrix<double> &gradF)
+	bool flag = newtonSolver(lambda, [this, &pos, &vel, &F](Eigen::VectorXd lambda , Eigen::VectorXd &f, Eigen::SparseMatrix<double> &gradF)
 	{
-		this->computeLagrangeMultiple(lambda, F, gradF, pos, vel, F);
+		this->computeLagrangeMultiple(lambda, f, gradF, pos, vel, F);
 	});
 	if (flag)
 	{
 		//TODO: update accordingly
-		;
+		Eigen::VectorXd g;
+		Eigen::SparseMatrix<double> gradG;
+		computeContraintsAndGradient(pos, g, gradG);
+		vel += params_.timeStep*mInv_*(F + gradG.transpose()*lambda);
 	}
+	unbuildConfiguration(pos, vel);
 
 	Eigen::VectorXd cForce(3 * nbodies);
 	Eigen::VectorXd thetaForce(3 * nbodies);
@@ -477,19 +500,12 @@ bool ElasticHook::numericalIntegration()
 
 
 
-	return false;
+	return flag;
 }
 
 void ElasticHook::computeForce(Eigen::VectorXd & F)
 {
-	//Assemble Centerline Force 
-	int nconfigurations = 0;
-	for (int i = 0; i < (int)rods_.size(); i++)
-	{
-		nconfigurations += (3 * rods_[i]->nodes.size());
-	}
-
-	F.resize(nconfigurations);
+	
 	int offset = 0;
 
 	for (int i = 0; i < (int)rods_.size(); i++)
@@ -499,7 +515,7 @@ void ElasticHook::computeForce(Eigen::VectorXd & F)
 		rods_[i]->computeCenterlineForces(f);
 		for (int k = 0; k < f.size(); k++)
 		{
-			F(offset + k) = f(k);
+			F(offset + k) += f(k);
 		}
 		offset += nvars;
 	} 
@@ -516,7 +532,17 @@ void ElasticHook::computeForce(Eigen::VectorXd & F)
 
 void ElasticHook::computeGravityForce(Eigen::VectorXd & F)
 {
-
+	int offset = 0;
+	Eigen::Vector3d gravityDir(0, 1.0, 0);
+	for (int i = 0; i < (int)rods_.size(); i++)
+	{
+		int nParticles = rods_[i]->nodes.size();
+		for (int k = 0; k < nParticles; k++)
+		{
+			F.segment<3>(3 * (offset + k)) = params_.gravityG * rods_[i]->nodes[k].mass * gravityDir;
+		}
+		offset += nParticles;
+	}
 }
 
 
@@ -527,7 +553,7 @@ void ElasticHook::computeContraintsAndGradient(const Eigen::VectorXd &q, Eigen::
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
 		nConfigurations += (3 * rods_[i]->nodes.size());
-		nConstraints += (3 * (rods_[i]->nodes.size()-1));
+		nConstraints += rods_[i]->nodes.size()-1;
 	}
 
 	g.resize(nConstraints);
@@ -576,6 +602,7 @@ void ElasticHook::computeLagrangeMultiple(Eigen::VectorXd &lambda, Eigen::Vector
 	
 	// Change pos
 	Eigen::VectorXd nextPos, nextVel;
+	//std::cout << mInv_.size() << ' ' << constF.size() << std::endl;
 	nextVel = vel + params_.timeStep*mInv_*(constF + gradG.transpose()*lambda);
 	nextPos = pos + params_.timeStep*nextVel;
 
@@ -607,17 +634,63 @@ bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::Vec
 	return true;
 }
 
-/*
-void ElasticHook::computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
-{
-	
-}*/
 
 
 
 //////////////////////////////////////////////////////////////////////////////////////
 ////    Helper Function
 /////////////////////////////////////////////////////////////////////////////////////
+
+void ElasticHook::testProcess()
+{
+	/*
+	Here will put whatever the test pipeline is
+	*/
+
+	if (rods_.size() == 0) return;
+	
+	//Test energy differential
+	
+	ElasticRod &rod = *rods_[0];
+	ElasticRod *temprod = new ElasticRod(rod.nodes, params_);
+
+	Eigen::VectorXd pos, vel;
+	temprod->buildConfiguration(pos, vel);
+
+	auto energyFunc = [temprod](const Eigen::VectorXd &q) {
+		Eigen::VectorXd v;
+		v.resizeLike(q);
+		v.setZero();
+		temprod->unbuildConfiguration(q, v);
+		temprod->updateAfterTimeIntegration();
+		return temprod->computeTotalEnergy();
+	};
+
+	auto forceFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f) {
+		Eigen::VectorXd v;
+		v.resizeLike(q);
+		v.setZero();
+		temprod->unbuildConfiguration(q, v);
+		temprod->updateAfterTimeIntegration();
+		temprod->computeCenterlineForces(f);
+	};
+
+	TestModule::testEnergyDifferential(pos, energyFunc, forceFunc);
+
+	auto thetaForceFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f) {
+		Eigen::VectorXd v;
+		v.resizeLike(q);
+		v.setZero();
+		temprod->unbuildConfiguration(q, v);
+		temprod->updateAfterTimeIntegration();
+		Eigen::VectorXd dummy1, dummy2, dummy3;
+		temprod->computeEnergyThetaDifferentialAndHessian(f, dummy1, dummy2, dummy3);
+	};
+
+	TestModule::testEnergyDifferential(pos, energyFunc, thetaForceFunc);
+	delete temprod;
+}
+
 
 void ElasticHook::testForceDifferential()
 {

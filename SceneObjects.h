@@ -75,6 +75,7 @@ public:
 	ElasticRodSegment(int p1, int p2, double mass, double length) : Connector(p1, p2, mass), lambda(0), length(length) 
 	{
 		theta = 0.0;
+		bendingModulus = 0.5 * Eigen::Matrix2d::Identity();
 	}
 
 	virtual SimParameters::ConnectorType getType()

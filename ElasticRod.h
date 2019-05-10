@@ -47,6 +47,11 @@ public:
 	// Update rods and stencil information based on new configuration of the position
 	void updateAfterTimeIntegration();
 
+	// Compute theta for each rod segments 
+	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
+	// since Eigen does not have a tridiagonal linear system solver, I use the one in this webpage:
+	// https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
+	void computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
 
 	// Particles
 	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
@@ -81,11 +86,7 @@ private:
 
 	BoundaryCondition bcStats;
 
-	// Compute theta for each rod segments 
-	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
-	// since Eigen does not have a tridiagonal linear system solver
-	void computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
-
+	
 	// Update theta
 	void updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments

@@ -134,7 +134,9 @@ const Eigen::Vector3d ElasticRod::renderPos(Eigen::Vector3d & point, int index)
 	double dist = (point - nodes[p1].pos).dot(rods[index].t);
 
 	if (dist<0 || dist>rods[index].length)
+	{
 		return point;
+	}
 
 	return VectorMath::rotationMatrix(rods[index].t * rods[index].theta / rods[index].length * dist) * point;
 }
@@ -212,12 +214,13 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		dkb2 = (2 * VectorMath::crossProductMatrix(e1) + stencils[k].kb * e1.transpose()) / (restLength[k] * restLength[k + 1] + e1.dot(e2));
 		
 
-		for (int i = 0; i <= k+3; i++)
+		for (int i = 0; i <= k+2; i++)
 		{
 			//compute domega
 			Eigen::Vector3d psi(0,0,0);
 			Eigen::MatrixXd M;
 			M.resize(2, 3);
+			if (i >= nparticles) continue;
 			// j=k
 			M.row(1) = cos(rods[k].theta)* rods[k].u + sin(rods[k].theta)* rods[k].v;
 			M.row(0) = sin(rods[k].theta)* rods[k].v - cos(rods[k].theta)* rods[k].u;
@@ -254,7 +257,8 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			f.segment<3>(3 * i) += (-(M-J*stencils[k].prevCurvature*psi.transpose()).transpose()*coef1);
 			
 			//j=k+1
-			if (i >= nparticles) continue;
+			
+			psi.setZero();
 			M.row(1) = cos(rods[k+1].theta)* rods[k+1].u + sin(rods[k+1].theta)* rods[k+1].v;
 			M.row(0) = sin(rods[k+1].theta)* rods[k+1].v - cos(rods[k+1].theta)* rods[k+1].u;
 			switch (i - k)
@@ -353,7 +357,7 @@ void ElasticRod::updateAfterTimeIntegration()
 {
 	/*
 	Updates the following:
-	1. rods' length (Although we have inextensible constraint)
+	1. rods' length (Although we have inextensible constraint) and kb
 	2. bishop frame
 	3. check quasi static frame constraint and update material frame(i.e. theta)
 	
@@ -367,6 +371,13 @@ void ElasticRod::updateAfterTimeIntegration()
 		{
 			stencils[i - 1].length = rods[i].length + rods[i - 1].length;
 		}
+	}
+	for (int i = 0; i < nrods - 1; i++)
+	{
+		Eigen::Vector3d e1, e2;
+		e1 = nodes[i + 1].pos - nodes[i].pos;
+		e2 = nodes[i + 2].pos - nodes[i].pos;
+		stencils[i].kb = 2 * e1.cross(e2) / (e1.norm()*e2.norm() + e1.dot(e2));
 	}
 	updateBishopFrame();
 	updateQuasiStaticFrame();
@@ -441,6 +452,9 @@ void ElasticRod::updateBishopFrame()
 
 	int nRods = (int)rods.size();
 
+	rods[0].t = nodes[1].pos - nodes[0].pos;
+	rods[0].t = rods[0].t / rods[0].t.norm();
+	rods[0].v = rods[0].u.cross(rods[0].t);
 
 	// Now compute Bishop frame
 	for (int i = 1; i < nRods; i++)
@@ -449,7 +463,16 @@ void ElasticRod::updateBishopFrame()
 		rods[i].t = (rods[i].t) / (rods[i].t).norm();
 		Eigen::Vector3d n = (rods[i-1].t).cross(rods[i].t);
 
-		rods[i].u = VectorMath::rotationMatrix(n*asin(n.norm()) / n.norm()) * rods[i - 1].u;
+		// Watchout!
+		if (rods[i].t.dot(rods[i - 1].t) > 0)
+		{
+			rods[i].u = VectorMath::rotationMatrix(n*asin(n.norm()) / n.norm()) * rods[i - 1].u;
+		}
+		else
+		{
+			rods[i].u = VectorMath::rotationMatrix(n*(M_PI - asin(n.norm())) / n.norm()) * rods[i - 1].u;
+		}
+		
 		rods[i].u = (rods[i].u) / (rods[i].u).norm();
 
 		rods[i].v = (rods[i].t).cross(rods[i].u);
