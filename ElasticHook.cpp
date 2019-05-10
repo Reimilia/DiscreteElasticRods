@@ -28,7 +28,7 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 	}
 	if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0Toggle Rotation\0\0");
+		ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0\0");
 		ImGui::Combo("Connector Type", (int *)&params_.connectorType, "Flexible Rods\0\0");
 	}
 	if (ImGui::CollapsingHeader("Simulation Options", ImGuiTreeNodeFlags_DefaultOpen))
@@ -82,13 +82,32 @@ void ElasticHook::updateRenderGeometry()
 
 	int numcirclewedges = 20;
 
-	// this is terrible. But, easiest to get up and running
+	int totverts = 0;
+	int totfaces = 0;
 
-	std::vector<Eigen::Vector3d> verts;
-	std::vector<Eigen::Vector3d> vertexColors;
-	std::vector<Eigen::Vector3i> faces;
+	// floor
 
-	int idx = 0;
+	totverts += 5;
+	totfaces += 4;
+
+	for (RigidBodyInstance *rbi : bodies_)
+	{
+		totverts += rbi->getTemplate().getVerts().rows();
+		totfaces += rbi->getTemplate().getFaces().rows();
+	}
+
+	for (ElasticRod *rod : rods_)
+	{
+		int nverts = rod->nodes.size();
+		totverts += nverts * ballTemplate_->getVerts().rows() + (nverts - 1) * rodTemplate_->getVerts().rows();
+		totfaces += nverts * ballTemplate_->getFaces().rows() + (nverts - 1) * rodTemplate_->getFaces().rows();
+	}
+
+
+	renderQ.resize(totverts, 3);
+	renderF.resize(totfaces, 3);
+	int voffset = 0;
+	int foffset = 0;
 
 	double eps = 1e-4;
 
@@ -100,75 +119,109 @@ void ElasticHook::updateRenderGeometry()
 		vertexColors.push_back(Eigen::Vector3d(0.3, 1.0, 0.3));
 		}*/
 
-		verts.push_back(Eigen::Vector3d(0, -1, 0));
-		verts.push_back(Eigen::Vector3d(1, -1, 1));
-		verts.push_back(Eigen::Vector3d(-1, -1, 1));
-		verts.push_back(Eigen::Vector3d(-1, -1, -1));
-		verts.push_back(Eigen::Vector3d(1, -1, -1));
+		renderQ.row(voffset++) =  Eigen::Vector3d(0, -1, 0);
+		renderQ.row(voffset++) = Eigen::Vector3d(1e3, -1, 1e3);
+		renderQ.row(voffset++) = Eigen::Vector3d(-1e3, -1, 1e3);
+		renderQ.row(voffset++) = Eigen::Vector3d(-1e3, -1, -1e3);
+		renderQ.row(voffset++) = Eigen::Vector3d(1e3, -1, -1e3);
 
-		faces.push_back(Eigen::Vector3i(idx + 0, idx + 2, idx + 1));
-		faces.push_back(Eigen::Vector3i(idx + 0, idx + 3, idx + 2));
-		faces.push_back(Eigen::Vector3i(idx + 0, idx + 4, idx + 3));
-		faces.push_back(Eigen::Vector3i(idx + 0, idx + 1, idx + 4));
-
-		idx += 5;
+		renderF.row(foffset) = Eigen::Vector3i(foffset + 0, foffset + 2, foffset + 1);
+		renderF.row(foffset+1) = Eigen::Vector3i(foffset + 0, foffset + 3, foffset + 2);
+		renderF.row(foffset+2) = Eigen::Vector3i(foffset + 0, foffset + 4, foffset + 3);
+		renderF.row(foffset+3) = Eigen::Vector3i(foffset + 0, foffset + 1, foffset + 4);
+		
+		foffset += 4;
 	}
 
 
 	double basescale = 0.1;
-	//Push a test bar 
-	int nverts = rodV.rows();
-	int nfaces = rodF.rows();
-	for (int i = 0; i < nverts; i++)
-	{
-		verts.push_back(basescale * rodV.row(i));
+	
+	for (RigidBodyInstance *rbi : bodies_)
+    {
+        int nverts = rbi->getTemplate().getVerts().rows();
+        for (int i = 0; i < nverts; i++)
+            renderQ.row(voffset + i) = (rbi->c + VectorMath::rotationMatrix(rbi->theta)*rbi->getTemplate().getVerts().row(i).transpose()).transpose();
+        int nfaces = rbi->getTemplate().getFaces().rows();
+        for (int i = 0; i < nfaces; i++)
+        {
+            for (int j = 0; j < 3; j++)
+            {
+                renderF(foffset + i, j) = rbi->getTemplate().getFaces()(i, j) + voffset;
+            }
+        }
+        voffset += nverts;
+        foffset += nfaces;
+    }
 
-	}
-	for (int i = 0; i < nfaces; i++)
-	{
-		faces.push_back(rodF.row(i).transpose() + idx * Eigen::Vector3i::Ones());
-	}
-	idx += nverts;
 
-	/*int nparticles = particles_.size();
-
-	for (int i = 0; i<nparticles; i++)
+	//Lazy rendering for rods
+	//TODO: find a better way to render it
+	Eigen::Vector3d dir0(1, 0, 0);
+	for (ElasticRod *rod : rods_)
 	{
-		int nverts = ballV.rows();
-		int nfaces = ballF.rows();
-		Eigen::RowVector3d c = Eigen::RowVector3d(particles_[i].pos[0], particles_[i].pos[1], 0);
-		for (int i = 0; i < nverts; i++)
+		int nParticles = rod->nodes.size();
+		for (int k = 0; k < nParticles; k++)
 		{
-			verts.push_back(c + (ballV.row(i) - c)*baseradius);
+			int nverts = ballTemplate_->getVerts().rows();
+			for (int i = 0; i < nverts; i++)
+				renderQ.row(voffset + i) = (rod->nodes[k].pos + ballTemplate_->getVerts().row(i).transpose()).transpose();
+			int nfaces = ballTemplate_->getFaces().rows();
+			for (int i = 0; i < nfaces; i++)
+			{
+				for (int j = 0; j < 3; j++)
+				{
+					renderF(foffset + i, j) = ballTemplate_->getFaces()(i, j) + voffset;
+				}
+			}
+			voffset += nverts;
+			foffset += nfaces;
 		}
-		for (int i = 0; i < nfaces; i++)
+
+		for (int k = 0; k < nParticles - 1; k++)
 		{
-			faces.push_back(ballF.row(i).transpose() + idx * Eigen::Vector3i::Ones());
+			int nverts = rodTemplate_->getVerts().rows();
+			Eigen::Vector3d e = rod->nodes[k + 1].pos - rod->nodes[k].pos;
+			Eigen::Vector3d width(10*e.norm(), 1, 1);
+			e /= e.norm();
+			Eigen::Vector3d c = (rod->nodes[k].pos + rod->nodes[k + 1].pos) / 2;
+			Eigen::Vector3d theta = dir0.cross(e);
+			for (int i = 0; i < nverts; i++)
+			{
+				Eigen::Vector3d pos;
+				if (e.dot(dir0) > 0)
+					pos = c + VectorMath::rotationMatrix(theta * asin(theta.norm()) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
+				else
+					pos = c + VectorMath::rotationMatrix(theta * (M_PI - asin(theta.norm())) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
+				renderQ.row(voffset + i) = rod->renderPos(pos,k);
+			}	
+			int nfaces = rodTemplate_->getFaces().rows();
+			for (int i = 0; i < nfaces; i++)
+			{
+				for (int j = 0; j < 3; j++)
+				{
+					renderF(foffset + i, j) = rodTemplate_->getFaces()(i, j) + voffset;
+				}
+			}
+			voffset += nverts;
+			foffset += nfaces;
 		}
 
-		idx += nverts;
-
-	}*/
-
-	renderQ.resize(verts.size(), 3);
-	//renderC.resize(vertexColors.size(), 3);
-	for (int i = 0; i < verts.size(); i++)
-	{
-		renderQ.row(i) = verts[i];
-		//renderC.row(i) = vertexColors[i];
 	}
-	renderF.resize(faces.size(), 3);
-	for (int i = 0; i < faces.size(); i++)
-		renderF.row(i) = faces[i];
+
 }
 
 
 void ElasticHook::initSimulation()
 {
 	time_ = 0;
-	//particles_.clear();
-	for (std::vector<ElasticRod *>::iterator it = rods_.begin(); it != rods_.end(); ++it)
-		delete *it;
+
+	particles_.clear();
+	particles_.shrink_to_fit();
+	for (ElasticRod *it : rods_)
+		delete it;
+	rods_.clear();
+	rods_.shrink_to_fit();
+	isNewRod_ = false;
 	loadMesh();
 }
 
@@ -197,18 +250,10 @@ void ElasticHook::tick()
 {
 	message_mutex.lock();
 	{
-		while (!mouseClicks_.empty())
+		if (launch_)
 		{
-			MouseClick mc = mouseClicks_.front();
-			mouseClicks_.pop_front();
-			switch (mc.mode)
-			{
-			case SimParameters::ClickMode::CM_ADDPARTICLE:
-			{
-				addParticle(mc.x, mc.y, 0);
-				break;
-			}
-			}
+			addParticle(launchPos_[0], launchPos_[1], launchPos_[2]);
+			launch_ = false;
 		}
 	}
 	message_mutex.unlock();
@@ -236,9 +281,24 @@ bool ElasticHook::simulateOneStep()
 void ElasticHook::addParticle(double x, double y, double z)
 {
 	Eigen::Vector3d newpos(x, y, z);
-	double mass = params_.particleMass;
-	if (params_.particleFixed)
-		mass = std::numeric_limits<double>::infinity();
+	Eigen::Vector3d zero(0, 0, 0);
+
+	//RigidBodyInstance *rbi = new RigidBodyInstance(*ballTemplate_, newpos, zero, zero, zero, 1);
+	//bodies_.push_back(rbi);
+
+	particles_.push_back(Particle(newpos, 1, true, false));
+
+	if ((int)rods_.size()>0)
+	{
+		delete rods_.back();
+		rods_.pop_back();
+		rods_.push_back(new ElasticRod(particles_, params_));
+	}
+	else
+	{
+		rods_.push_back(new ElasticRod(particles_, params_));
+	}
+
 }
 
 void ElasticHook::buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel)
@@ -278,6 +338,7 @@ void ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::
 			v(k) = vel(offset + k);
 		}
 		rods_[i]->unbuildConfiguration(q, v);
+		rods_[i]->updateAfterTimeIntegration();
 		offset += ndofs;
 	}
 }
@@ -352,7 +413,8 @@ bool ElasticHook::numericalIntegration()
 		rod.unbuildConfiguration(pos, vel);	
 	}
 
-
+	Eigen::VectorXd pos, vel;
+	buildConfiguration(pos, vel);
 	
 	// Lagrangian, solved via Newton's method
 	
@@ -361,15 +423,15 @@ bool ElasticHook::numericalIntegration()
 
 	Eigen::SparseMatrix<double> gradG;
 	Eigen::VectorXd g, lambda;
-	computeContraintsAndGradient(g, gradG);
+	computeContraintsAndGradient(pos, g, gradG);
 
 	lambda.resizeLike(g);
 	lambda.setZero();
 
 
-	bool flag = newtonSolver(lambda, [this, F](Eigen::VectorXd lambda, Eigen::VectorXd &force, Eigen::SparseMatrix<double> &gradF)
+	bool flag = newtonSolver(lambda, [this, &pos, &vel, &F](Eigen::VectorXd lambda , Eigen::VectorXd &F, Eigen::SparseMatrix<double> &gradF)
 	{
-		this->computeLagrangeMultiple(lambda, F, force, gradF);
+		this->computeLagrangeMultiple(lambda, F, gradF, pos, vel, F);
 	});
 	if (flag)
 	{
@@ -421,7 +483,6 @@ bool ElasticHook::numericalIntegration()
 void ElasticHook::computeForce(Eigen::VectorXd & F)
 {
 	//Assemble Centerline Force 
-	//TODO: Compute External Forces
 	int nconfigurations = 0;
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
@@ -442,11 +503,24 @@ void ElasticHook::computeForce(Eigen::VectorXd & F)
 		}
 		offset += nvars;
 	} 
+
+	// Compute External force here:
+	if (params_.gravityEnabled)
+		computeGravityForce(F);
+
 	//TODO: Assemble Rigid body forces
 
 }
 
-void ElasticHook::computeContraintsAndGradient(Eigen::VectorXd &g, Eigen::SparseMatrix<double>& gradG)
+
+
+void ElasticHook::computeGravityForce(Eigen::VectorXd & F)
+{
+
+}
+
+
+void ElasticHook::computeContraintsAndGradient(const Eigen::VectorXd &q, Eigen::VectorXd &g, Eigen::SparseMatrix<double>& gradG)
 {
 	int nConfigurations = 0, nConstraints = 0;
 
@@ -471,8 +545,8 @@ void ElasticHook::computeContraintsAndGradient(Eigen::VectorXd &g, Eigen::Sparse
 		for (int i = 0; i < nparticles - 1; i++)
 		{
 			Eigen::Vector3d e1, e2;
-			e1 = rod.nodes[i].pos;
-			e2 = rod.nodes[i].pos;
+			e1 = q.segment<3>(3 * (particleOffset + i));
+			e2 = q.segment<3>(3 * (particleOffset + i + 1));
 			g(rodsOffset + i) = (e2 - e1).squaredNorm() - rod.restLength(i) * rod.restLength(i);
 
 			Eigen::Vector3d localF = 2 * (e1 - e2);
@@ -493,24 +567,19 @@ void ElasticHook::computeContraintsAndGradient(Eigen::VectorXd &g, Eigen::Sparse
 	gradG.setFromTriplets(dgTriplet.begin(), dgTriplet.end());
 }
 
-void ElasticHook::computeLagrangeMultiple(Eigen::VectorXd &lambda, const Eigen::VectorXd &constF, Eigen::VectorXd &f, Eigen::SparseMatrix<double>&gradF)
+void ElasticHook::computeLagrangeMultiple(Eigen::VectorXd &lambda, Eigen::VectorXd &f, Eigen::SparseMatrix<double>&gradF, const Eigen::VectorXd &pos, const Eigen::VectorXd &vel, const Eigen::VectorXd &constF)
 {
 
 	Eigen::VectorXd g;
 	Eigen::SparseMatrix<double> gradG;
-	computeContraintsAndGradient(g, gradG);
+	computeContraintsAndGradient(pos, g, gradG);
 	
 	// Change pos
-	Eigen::VectorXd prevPos;
+	Eigen::VectorXd nextPos, nextVel;
+	nextVel = vel + params_.timeStep*mInv_*(constF + gradG.transpose()*lambda);
+	nextPos = pos + params_.timeStep*nextVel;
 
-
-
-	computeContraintsAndGradient(f, gradF);
-	
-	// Unchange pos
-
-
-	
+	computeContraintsAndGradient(nextPos, f, gradF);
 	Eigen::SparseMatrix<double> W;
 	W = params_.timeStep * params_.timeStep * mInv_ *gradG.transpose();
 	gradF = gradF * W;
@@ -598,6 +667,15 @@ void ElasticHook::testForceDifferential()
 
 void ElasticHook::loadMesh()
 {
+	for (RigidBodyInstance *rbi : bodies_)
+		delete rbi;
+	for (RigidBodyTemplate *rbt : templates_)
+		delete rbt;
+	bodies_.clear();
+	bodies_.shrink_to_fit();
+	templates_.clear();
+	templates_.shrink_to_fit();
+
 	std::string prefix;
 	std::string meshFilename = std::string("meshes/sphere.obj");
 	std::ifstream ifs(meshFilename);
@@ -617,10 +695,11 @@ void ElasticHook::loadMesh()
 				return;
 		}
 	}
-
-	igl::readOBJ(meshFilename, ballV, ballF);
+	if (ballTemplate_) delete ballTemplate_;
+	ballTemplate_ = new RigidBodyTemplate(meshFilename, 0.01);
 	meshFilename = prefix + std::string("meshes/box.obj");
-	igl::readOBJ(meshFilename, rodV, rodF);
+	if(rodTemplate_) delete rodTemplate_;
+	rodTemplate_ = new RigidBodyTemplate(meshFilename, 0.01);
 	std::cout << "Initialize Complete!\n";
 }
 

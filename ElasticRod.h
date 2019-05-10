@@ -47,9 +47,9 @@ public:
 	// Update rods and stencil information based on new configuration of the position
 	void updateAfterTimeIntegration();
 
+
 	// Particles
 	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
-
 	// Rigid body id, if free or clamped only, -1 will be put here;
 	int leftRigidBody, rightRigidBody;
 
@@ -63,7 +63,6 @@ public:
 	Eigen::MatrixXd restCurvature;
 
 private:
-
 	// Material Frame (Relatively for 0-th index point)
 	Eigen::Vector3d u0, v0, t0;
 

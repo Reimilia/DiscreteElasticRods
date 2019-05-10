@@ -24,7 +24,7 @@ struct MouseClick
 class ElasticHook : public PhysicsHook
 {
 public:
-	ElasticHook() : PhysicsHook() {};
+	ElasticHook() : PhysicsHook() { launch_ = false; ballTemplate_ = NULL; rodTemplate_ = NULL;  isNewRod_ = true; };
 
 	virtual void drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu);
 
@@ -62,14 +62,13 @@ private:
 	Eigen::Vector3d launchPos_;
 	Eigen::Vector3d launchDir_;
 
+	bool isNewRod_;
 
 	// Load sphere and rod model
 	// These two elements are only for rendering
 	// So we will not assign them any rigid body property
-	Eigen::MatrixXd ballV;
-	Eigen::MatrixXi ballF;
-	Eigen::MatrixXd rodV;
-	Eigen::MatrixXi rodF;
+	RigidBodyTemplate *ballTemplate_;
+	RigidBodyTemplate *rodTemplate_;
 
 	void loadMesh();
 
@@ -80,11 +79,12 @@ private:
 
 	//Rigid Body Elements
     std::vector<RigidBodyTemplate *> templates_;
-    std::vector<RigidBodyInstance *> bodies_;
+	std::vector<RigidBodyInstance *> bodies_;
 
 	//Elastic Rods Elements
 	//Note that the model assumes only connecting points are d.o.f.
 	//So I use a lazy way to render the rods_
+	std::vector<Particle, Eigen::aligned_allocator<Particle> > particles_;
 	std::vector<ElasticRod *> rods_;
 
 	std::mutex message_mutex;
@@ -102,7 +102,6 @@ private:
 	void unbuildConfiguration(const Eigen::VectorXd &, const Eigen::VectorXd &);
 
 	void computeMassInverse(Eigen::SparseMatrix<double> &Minv);
-	//void computeMass(Eigen::SparseMatrix<double> &M);
 	bool numericalIntegration();
 
 	//void updatebyVelocityVerletUnconstraint(Eigen::VectorXd &q, Eigen::VectorXd &v);
@@ -111,10 +110,10 @@ private:
 	void computeForce(Eigen::VectorXd &F);
 	//void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H);
 
-	void computeContraintsAndGradient(Eigen::VectorXd &F, Eigen::SparseMatrix<double> &gradF);
-	void computeLagrangeMultiple(Eigen::VectorXd &, const Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &);
+	void computeContraintsAndGradient(const Eigen::VectorXd &, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &gradF);
+	void computeLagrangeMultiple(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &, const Eigen::VectorXd &, const Eigen::VectorXd &, const Eigen::VectorXd &);
 
-	//void processGravityForce(Eigen::VectorXd &F);
+	void computeGravityForce(Eigen::VectorXd &F);
 	//void processFloorForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, std::vector<Eigen::Triplet<double> > &H);
 	
 	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeForceAndHessian);

@@ -1,5 +1,5 @@
 #include "ElasticRod.h"
-
+#include <iostream>
 
 ElasticRod::ElasticRod()
 {
@@ -18,11 +18,15 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	nodes.clear();
 	nodes.shrink_to_fit();
 	restPos.resize(3, nNodes);
+
+
 	for (int i = 0; i < nNodes; i++)
 	{
 		nodes.push_back(particles[i]);
 		restPos.col(i) = particles[i].pos;
 	}
+	if (nNodes == 1)
+		return;
 
 	rods.clear();
 	rods.shrink_to_fit();
@@ -73,9 +77,6 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	
 	// Compute the rest material frame
 	updateBishopFrame();
-	
-	// Compute Material Curvature
-	updateQuasiStaticFrame();
 
 	// Compute the twist via quasi static assumption
 	updateMaterialCurvature();
@@ -85,6 +86,9 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 		restCurvature.col(2 * i) = stencils[i].prevCurvature;
 		restCurvature.col(2 * i + 1) = stencils[i].nextCurvature;
 	}
+
+	// Compute Material Curvature
+	updateQuasiStaticFrame();
 }
 
 ElasticRod::~ElasticRod()
