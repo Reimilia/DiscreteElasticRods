@@ -186,19 +186,26 @@ void ElasticHook::updateRenderGeometry()
 		for (int k = 0; k < nParticles - 1; k++)
 		{
 			int nverts = rodTemplate_->getVerts().rows();
-			Eigen::Vector3d e = rod->nodes[k + 1].pos - rod->nodes[k].pos;
-			Eigen::Vector3d width(10*e.norm(), 1, 1);
-			e /= e.norm();
-			Eigen::Vector3d c = (rod->nodes[k].pos + rod->nodes[k + 1].pos) / 2;
-			Eigen::Vector3d theta = dir0.cross(e);
+			ElasticRodSegment onebar = rod->getRodSegment(k);
+			Eigen::Vector3d width(10 * onebar.length , 1, 1);
+			Eigen::Vector3d c = (rod->getNodeSegment(k).pos + rod->getNodeSegment(k+1).pos) / 2;
+			Eigen::Matrix3d rotation;
+			rotation.col(0) = onebar.t;
+			rotation.col(1) = cos(onebar.theta) * onebar.u + sin(onebar.theta) * onebar.v;
+			rotation.col(2) = -sin(onebar.theta) * onebar.u + cos(onebar.theta) * onebar.v;
+			//Eigen::Vector3d theta = dir0.cross(e);
+			Eigen::Vector3d theta = VectorMath::axisAngle(rotation);
+			
 			for (int i = 0; i < nverts; i++)
 			{
 				Eigen::Vector3d pos;
-				if (e.dot(dir0) > 0)
+				/*if (e.dot(dir0) > 0)
 					pos = c + VectorMath::rotationMatrix(theta * asin(theta.norm()) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
 				else
-					pos = c + VectorMath::rotationMatrix(theta * (M_PI - asin(theta.norm())) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
-				renderQ.row(voffset + i) = rod->renderPos(pos,k);
+					pos = c + VectorMath::rotationMatrix(theta * (M_PI - asin(theta.norm())) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);*/
+				pos = c + VectorMath::rotationMatrix(theta)* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
+				//renderQ.row(voffset + i) = rod->renderPos(pos,k);
+				renderQ.row(voffset + i) = pos;
 			}	
 			int nfaces = rodTemplate_->getFaces().rows();
 			for (int i = 0; i < nfaces; i++)
@@ -653,41 +660,91 @@ void ElasticHook::testProcess()
 	
 	ElasticRod &rod = *rods_[0];
 	ElasticRod *temprod = new ElasticRod(rod.nodes, params_);
-
-	Eigen::VectorXd pos, vel;
+	
+	Eigen::VectorXd pos, vel, thetas;
 	temprod->buildConfiguration(pos, vel);
 
+	int nrods = (int)temprod->rods.size();
+	thetas.resize(nrods);
+	for (int i = 0; i < nrods; i++)
+	{
+		thetas[i] = temprod->getRodSegment(i).theta;
+	}
+
+	std::cout << "Test centerline force\n";
 	auto energyFunc = [temprod](const Eigen::VectorXd &q) {
-		Eigen::VectorXd v;
-		v.resizeLike(q);
-		v.setZero();
+		Eigen::VectorXd dummy,v;
+		temprod->buildConfiguration(dummy, v);
 		temprod->unbuildConfiguration(q, v);
 		temprod->updateAfterTimeIntegration();
-		return temprod->computeTotalEnergy();
+		double e=temprod->computeTotalEnergy();
+		temprod->unbuildConfiguration(dummy, v);
+		temprod->updateAfterTimeIntegration();
+		return e;
 	};
 
 	auto forceFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f) {
-		Eigen::VectorXd v;
-		v.resizeLike(q);
-		v.setZero();
+		Eigen::VectorXd dummy, v;
+		temprod->buildConfiguration(dummy, v);
 		temprod->unbuildConfiguration(q, v);
 		temprod->updateAfterTimeIntegration();
 		temprod->computeCenterlineForces(f);
+		temprod->unbuildConfiguration(dummy, v);
+		temprod->updateAfterTimeIntegration();
 	};
 
 	TestModule::testEnergyDifferential(pos, energyFunc, forceFunc);
+	delete temprod;
+
+	std::cout << "Test Theta Force\n";
+	temprod = new ElasticRod(rod.nodes, params_);
+
+	auto energyThetaFunc = [temprod](const Eigen::VectorXd &q) {
+		for (int k = 0; k < (int)temprod->rods.size(); k++)
+		{
+			temprod->rods[k].theta = q(k);
+		}
+		temprod->updateMaterialCurvature();
+		return temprod->computeTotalEnergy();
+	};
 
 	auto thetaForceFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f) {
-		Eigen::VectorXd v;
-		v.resizeLike(q);
-		v.setZero();
-		temprod->unbuildConfiguration(q, v);
-		temprod->updateAfterTimeIntegration();
+		for (int k = 0; k < (int)temprod->rods.size(); k++)
+		{
+			temprod->rods[k].theta = q(k);
+		}
+		temprod->updateMaterialCurvature();
 		Eigen::VectorXd dummy1, dummy2, dummy3;
 		temprod->computeEnergyThetaDifferentialAndHessian(f, dummy1, dummy2, dummy3);
 	};
 
-	TestModule::testEnergyDifferential(pos, energyFunc, thetaForceFunc);
+	TestModule::testEnergyDifferential(thetas, energyThetaFunc, thetaForceFunc);
+	delete temprod;
+
+
+	temprod = new ElasticRod(rod.nodes, params_);
+
+	std::cout << "Test Theta Hessian\n";
+	auto thetaFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f, Eigen::SparseMatrix<double> &H) {
+		for (int k = 0; k < (int)q.size(); k++)
+		{
+			temprod->rods[k].theta = q(k);
+		}
+		temprod->updateMaterialCurvature();
+		Eigen::VectorXd lowerH, centerH, upperH;
+		temprod->computeEnergyThetaDifferentialAndHessian(f, lowerH, centerH, upperH);
+		H.resize(q.size(), q.size());
+		std::vector<Eigen::Triplet<double>> hTriplet;
+		for (int i = 0; i < centerH.size(); i++)
+		{
+			if (i > 0) hTriplet.push_back(Eigen::Triplet<double>(i, i - 1, lowerH[i]));
+			hTriplet.push_back(Eigen::Triplet<double>(i, i, centerH[i]));
+			if (i < centerH.size() - 1) hTriplet.push_back(Eigen::Triplet<double>(i, i + 1, upperH[i]));
+		}
+		H.setFromTriplets(hTriplet.begin(), hTriplet.end());
+	};
+
+	TestModule::testEnergyHessian(thetas, thetaFunc);
 	delete temprod;
 }
 

@@ -67,13 +67,26 @@ public:
 	// Rest material curvature
 	Eigen::MatrixXd restCurvature;
 
-private:
-	// Material Frame (Relatively for 0-th index point)
-	Eigen::Vector3d u0, v0, t0;
+	const Particle & getNodeSegment(int index) { return nodes[index]; }
+	const ElasticRodSegment & getRodSegment(int index) { return rods[index]; }
+	const BendingStencil & getStencilSegment(int index) { return stencils[index]; }
+
 
 	// Rod Segments
 	std::vector<ElasticRodSegment> rods;
 
+	// Update theta
+	void updateQuasiStaticFrame();
+	// Compute local parallel transport coordinate frame for each rod segments
+	void updateBishopFrame();
+	// Update all curvature assigned with bending stencils.
+	void updateMaterialCurvature();
+private:
+	// Material Frame (Relatively for 0-th index point)
+	Eigen::Vector3d u0, v0, t0;
+
+	// Use bending stencils to control the binormal curvature and material curvature.
+	std::vector <BendingStencil> stencils;
 	
 	// Bending Modulus
 	// Eigen::Matrix2d B;
@@ -81,18 +94,11 @@ private:
 	// Twisting Coefficient
 	double beta;
 
-	// Use bending stencils to control the binormal curvature and material curvature.
-	std::vector <BendingStencil> stencils;
 
 	BoundaryCondition bcStats;
 
 	
-	// Update theta
-	void updateQuasiStaticFrame();
-	// Compute local parallel transport coordinate frame for each rod segments
-	void updateBishopFrame();
-	// Update all curvature assigned with bending stencils.
-	void updateMaterialCurvature();
+	
 
 	SimParameters params;
 

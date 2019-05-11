@@ -17,9 +17,11 @@
 class TestModule
 {
 public:
-	static bool testEnergyDifferential(const Eigen::VectorXd &q, std::function<double(const Eigen::VectorXd &)> computeEnergy, std::function<void(const Eigen::VectorXd &, Eigen::VectorXd&)> computeGradient);
+	static bool testEnergyDifferential(const Eigen::VectorXd &, std::function<double(const Eigen::VectorXd &)> computeEnergy, std::function<void(const Eigen::VectorXd &, Eigen::VectorXd&)> computeGradient);
+	static bool testEnergyDifferential(std::function<double()> computeEnergy, std::function<void(Eigen::VectorXd&)> computeGradient);
 	static bool testEnergyHessian(std::function<void(Eigen::VectorXd &)> computeGradient, std::function<void(Eigen::SparseMatrix<double> &)> computeHessian);
 	static bool testEnergyHessian(std::function<void(Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> computeGradientandHessian);
+	static bool testEnergyHessian(const Eigen::VectorXd &, std::function<void(const Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> computeGradientandHessian);
 
 };
 
