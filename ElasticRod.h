@@ -45,13 +45,13 @@ public:
 	void computeCenterlineForces(Eigen::VectorXd &);
 		
 	// Update rods and stencil information based on new configuration of the position
-	void updateAfterTimeIntegration();
+	void updateAfterPosChange();
 
 	// Compute theta for each rod segments 
 	// Note we know Hessian is tridiagonal, so we use three vectors instead of a sparse matrix
 	// since Eigen does not have a tridiagonal linear system solver, I use the one in this webpage:
 	// https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
-	void computeEnergyThetaDifferentialAndHessian(Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
+	void computeEnergyThetaDifferentialAndHessian(const Eigen::VectorXd &theta,Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
 
 	// Particles
 	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;

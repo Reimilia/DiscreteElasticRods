@@ -6,7 +6,7 @@ bool TestModule::testEnergyDifferential(const Eigen::VectorXd &q, std::function<
 {
 	Eigen::VectorXd f;
 	computeGradient(q, f);
-
+	std::cout << "Derivative is : " << f.norm() << std::endl;
 	double E0;
 	E0 = computeEnergy(q);
 
@@ -19,7 +19,7 @@ bool TestModule::testEnergyDifferential(const Eigen::VectorXd &q, std::function<
 
 		std::cout << "EPS is: " << eps << std::endl;
 		std::cout << "Difference of Energy is: " << (E1-E0)/ eps << std::endl;
-		std::cout << "Norm of Directional Gradient is: " << f.dot(direction) << std::endl;
+		std::cout << "Norm of Directional Gradient is: " << -f.dot(direction) << std::endl;
 		std::cout << "The difference between above two is: " << (E1 - E0) / eps + f.dot(direction) << std::endl << std::endl;
 	}
 

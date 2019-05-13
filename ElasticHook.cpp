@@ -191,19 +191,22 @@ void ElasticHook::updateRenderGeometry()
 			Eigen::Vector3d c = (rod->getNodeSegment(k).pos + rod->getNodeSegment(k+1).pos) / 2;
 			Eigen::Matrix3d rotation;
 			rotation.col(0) = onebar.t;
+
+			// Interpolate theta
+
+			
 			rotation.col(1) = cos(onebar.theta) * onebar.u + sin(onebar.theta) * onebar.v;
 			rotation.col(2) = -sin(onebar.theta) * onebar.u + cos(onebar.theta) * onebar.v;
-			//Eigen::Vector3d theta = dir0.cross(e);
+			//rotation.col(1) = onebar.u;
+			//rotation.col(2) = onebar.v;
 			Eigen::Vector3d theta = VectorMath::axisAngle(rotation);
 			
 			for (int i = 0; i < nverts; i++)
 			{
+				Eigen::Vector3d point = rodTemplate_->getVerts().row(i);
+				double dist = (point - rod->getNodeSegment(k).pos).dot(onebar.t);
 				Eigen::Vector3d pos;
-				/*if (e.dot(dir0) > 0)
-					pos = c + VectorMath::rotationMatrix(theta * asin(theta.norm()) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
-				else
-					pos = c + VectorMath::rotationMatrix(theta * (M_PI - asin(theta.norm())) / theta.norm())* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);*/
-				pos = c + VectorMath::rotationMatrix(theta)* rodTemplate_->getVerts().row(i).transpose().cwiseProduct(width);
+				pos = c + VectorMath::rotationMatrix(theta)* point.cwiseProduct(width);
 				//renderQ.row(voffset + i) = rod->renderPos(pos,k);
 				renderQ.row(voffset + i) = pos;
 			}	
@@ -240,7 +243,7 @@ void ElasticHook::initSimulation()
 
 bool ElasticHook::mouseClicked(igl::opengl::glfw::Viewer & viewer, Eigen::Vector3d dir, int button)
 {
-	if (button != 2)
+	if (button != 2 || !isPaused())
 		return false;
 
 	message_mutex.lock();
@@ -263,7 +266,7 @@ void ElasticHook::tick()
 {
 	message_mutex.lock();
 	{
-		if (launch_)
+		if (launch_ && isPaused())
 		{
 			addParticle(launchPos_[0], launchPos_[1], launchPos_[2]);
 			launch_ = false;
@@ -299,16 +302,17 @@ void ElasticHook::addParticle(double x, double y, double z)
 	//RigidBodyInstance *rbi = new RigidBodyInstance(*ballTemplate_, newpos, zero, zero, zero, 1);
 	//bodies_.push_back(rbi);
 
-	particles_.push_back(Particle(newpos, 1, false, false));
+	particles_.push_back(Particle(newpos, 0, false, false));
 
 	particles_[0].fixed = true;
 	particles_[(int)particles_.size() - 1].fixed = true;
-
+	
 	if ((int)rods_.size()>0)
 	{
 		delete rods_.back();
 		rods_.pop_back();
 		rods_.push_back(new ElasticRod(particles_, params_));
+		rods_.back()->assignClampedBoundaryCondition(0, M_PI);
 	}
 	else
 	{
@@ -358,7 +362,6 @@ void ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::
 			v(k) = vel(offset + k);
 		}
 		rods_[i]->unbuildConfiguration(q, v);
-		rods_[i]->updateAfterTimeIntegration();
 		offset += ndofs;
 	}
 }
@@ -386,14 +389,14 @@ void ElasticHook::computeMassInverse(Eigen::SparseMatrix<double>& mInv)
 				massInvTriplet.push_back(Eigen::Triplet<double>(3 * (offset + k) + j, 3 * (offset + k) + j, massInverse));
 			}
 		}
-		offset += 3 * nParticles;
+		offset += nParticles;
 	}
 
 
 	// TODO: assemble rigid body mass inverse
 
 	
-	mInv.resize(offset,offset);
+	mInv.resize(3 * offset,3 * offset);
 	mInv.setFromTriplets(massInvTriplet.begin(), massInvTriplet.end());
 }
 
@@ -422,24 +425,14 @@ bool ElasticHook::numericalIntegration()
 		body.oldtheta = oldtheta;
 		oldthetas.push_back(oldtheta);
 	}
-
-	int nrods = (int)rods_.size();
-	for (int k = 0; k < nrods; k++)
-	{
-		ElasticRod &rod = *rods_[k];
-		Eigen::VectorXd pos, vel;
-		rod.buildConfiguration(pos, vel);
-		pos += params_.timeStep * vel;
-		rod.unbuildConfiguration(pos, vel);	
-	}
-
-	Eigen::VectorXd pos, vel;
-	buildConfiguration(pos, vel);
-
-	
 	
 	// Lagrangian, solved via Newton's method
 	
+	Eigen::VectorXd pos, vel;
+	buildConfiguration(pos, vel);
+	pos += params_.timeStep * vel;
+	unbuildConfiguration(pos, vel);
+
 	Eigen::VectorXd F;
 	F.resizeLike(pos);
 	F.setZero();
@@ -461,10 +454,10 @@ bool ElasticHook::numericalIntegration()
 	});
 	if (flag)
 	{
-		//TODO: update accordingly
-		Eigen::VectorXd g;
-		Eigen::SparseMatrix<double> gradG;
-		computeContraintsAndGradient(pos, g, gradG);
+		// TODO: update rigid body
+		std::cout << "lambda : " << lambda.norm() << std::endl;
+		std::cout << "F : " << F.norm() << std::endl;
+		std::cout << "gradG : " << gradG.norm() << std::endl;
 		vel += params_.timeStep*mInv_*(F + gradG.transpose()*lambda);
 	}
 	unbuildConfiguration(pos, vel);
@@ -546,7 +539,7 @@ void ElasticHook::computeGravityForce(Eigen::VectorXd & F)
 		int nParticles = rods_[i]->nodes.size();
 		for (int k = 0; k < nParticles; k++)
 		{
-			F.segment<3>(3 * (offset + k)) = params_.gravityG * rods_[i]->nodes[k].mass * gravityDir;
+			F.segment<3>(3 * (offset + k)) += params_.gravityG * rods_[i]->nodes[k].mass * gravityDir;
 		}
 		offset += nParticles;
 	}
@@ -629,7 +622,7 @@ bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::Vec
 		_computeFAndGradF(x, F, gradF);
 		if (F.norm()<params_.NewtonTolerance)
 		{
-			//std::cout<<"Optimal station reached!!"<<std::endl;
+			std::cout<<"Lagrangian Newton's Iteration Converges in " << i << "steps!" <<std::endl;
 			return true;
 		}
 		Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
@@ -659,7 +652,7 @@ void ElasticHook::testProcess()
 	//Test energy differential
 	
 	ElasticRod &rod = *rods_[0];
-	ElasticRod *temprod = new ElasticRod(rod.nodes, params_);
+	ElasticRod *temprod = rods_[0];
 	
 	Eigen::VectorXd pos, vel, thetas;
 	temprod->buildConfiguration(pos, vel);
@@ -676,63 +669,60 @@ void ElasticHook::testProcess()
 		Eigen::VectorXd dummy,v;
 		temprod->buildConfiguration(dummy, v);
 		temprod->unbuildConfiguration(q, v);
-		temprod->updateAfterTimeIntegration();
 		double e=temprod->computeTotalEnergy();
 		temprod->unbuildConfiguration(dummy, v);
-		temprod->updateAfterTimeIntegration();
 		return e;
 	};
 
 	auto forceFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f) {
 		Eigen::VectorXd dummy, v;
+		//std::cout << q.transpose() << std::endl;
 		temprod->buildConfiguration(dummy, v);
 		temprod->unbuildConfiguration(q, v);
-		temprod->updateAfterTimeIntegration();
+		//std::cout << "Here!" << std::endl;
 		temprod->computeCenterlineForces(f);
 		temprod->unbuildConfiguration(dummy, v);
-		temprod->updateAfterTimeIntegration();
 	};
 
 	TestModule::testEnergyDifferential(pos, energyFunc, forceFunc);
-	delete temprod;
+	//delete temprod;
 
 	std::cout << "Test Theta Force\n";
-	temprod = new ElasticRod(rod.nodes, params_);
+	//temprod = new ElasticRod(rod.nodes, params_);
 
 	auto energyThetaFunc = [temprod](const Eigen::VectorXd &q) {
+		Eigen::VectorXd tmp;
+		tmp.resizeLike(q);
 		for (int k = 0; k < (int)temprod->rods.size(); k++)
 		{
+			tmp[k] = temprod->getRodSegment(k).theta;
 			temprod->rods[k].theta = q(k);
 		}
 		temprod->updateMaterialCurvature();
-		return temprod->computeTotalEnergy();
+		double e=temprod->computeTotalEnergy();
+		for (int k = 0; k < (int)temprod->rods.size(); k++)
+		{
+			temprod->rods[k].theta = tmp(k);
+		}
+		temprod->updateMaterialCurvature();
+		return -e;
 	};
 
 	auto thetaForceFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f) {
-		for (int k = 0; k < (int)temprod->rods.size(); k++)
-		{
-			temprod->rods[k].theta = q(k);
-		}
-		temprod->updateMaterialCurvature();
 		Eigen::VectorXd dummy1, dummy2, dummy3;
-		temprod->computeEnergyThetaDifferentialAndHessian(f, dummy1, dummy2, dummy3);
+		temprod->computeEnergyThetaDifferentialAndHessian(q, f, dummy1, dummy2, dummy3);
 	};
 
 	TestModule::testEnergyDifferential(thetas, energyThetaFunc, thetaForceFunc);
-	delete temprod;
+	//delete temprod;
 
 
-	temprod = new ElasticRod(rod.nodes, params_);
+	//temprod = new ElasticRod(rod.nodes, params_);
 
 	std::cout << "Test Theta Hessian\n";
 	auto thetaFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f, Eigen::SparseMatrix<double> &H) {
-		for (int k = 0; k < (int)q.size(); k++)
-		{
-			temprod->rods[k].theta = q(k);
-		}
-		temprod->updateMaterialCurvature();
 		Eigen::VectorXd lowerH, centerH, upperH;
-		temprod->computeEnergyThetaDifferentialAndHessian(f, lowerH, centerH, upperH);
+		temprod->computeEnergyThetaDifferentialAndHessian(q, f, lowerH, centerH, upperH);
 		H.resize(q.size(), q.size());
 		std::vector<Eigen::Triplet<double>> hTriplet;
 		for (int i = 0; i < centerH.size(); i++)
@@ -745,7 +735,7 @@ void ElasticHook::testProcess()
 	};
 
 	TestModule::testEnergyHessian(thetas, thetaFunc);
-	delete temprod;
+	temprod = NULL;
 }
 
 
