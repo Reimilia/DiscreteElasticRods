@@ -372,14 +372,17 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			{
 				psi -= stencils[i - 2].kb / restLength[i - 1];
 			}
+			std::cout << psi.transpose() << std::endl;
 			if (i >= 1 && i <= k + 1)
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
 			}
+			std::cout << psi.transpose() << std::endl;
 			if (i <= k)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
+			std::cout << psi.transpose() << std::endl;
 			psi /= 2;
 			W = (M - J * stencils[k].prevCurvature*psi.transpose());
 		}
@@ -420,7 +423,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		}
 		
 	};
-	Eigen::Vector2d w = stencils[0].nextCurvature;
+	Eigen::Vector2d w = stencils[3].prevCurvature;
 	Eigen::Vector3d kb = stencils[0].kb;
 
 	std::cout << "Original Curvature is : " << w.transpose() << std::endl;
@@ -430,19 +433,19 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		Eigen::VectorXd direction = Eigen::VectorXd::Random(3);
 		direction.normalize();
 		Eigen::MatrixXd dW;
-		nodes[0].pos += direction*eps;
+		nodes[3].pos += direction*eps;
 		int nrods = (int)rods.size();
 		updateAfterPosChange();
-		func(dW, 0, 0, 0);
+		func(dW, 3, 0, 0);
 
-		Eigen::Vector2d epsW = stencils[0].nextCurvature;
+		Eigen::Vector2d epsW = stencils[3].prevCurvature;
 		std::cout << "Curvature is: " << epsW.transpose() << std::endl;
 		std::cout << "EPS is: " << eps << std::endl;
 		std::cout << "Norm of Finite Difference is: " << (epsW - w).norm() / eps << std::endl;
 		std::cout << "Norm of Directinal Gradient is: " << (dW*direction).norm() << std::endl;
 		std::cout << "The difference between above two is: " << ((epsW - w) / eps - dW * direction).norm() << std::endl << std::endl;
 
-		nodes[0].pos -= direction * eps;
+		nodes[3].pos -= direction * eps;
 		updateAfterPosChange();
 		
 	}
