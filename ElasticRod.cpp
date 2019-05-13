@@ -82,6 +82,9 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	updateBishopFrame();
 
 	// Compute the twist via quasi static assumption
+	/*
+	I do not fully understand why compute rest curvature goes first than quasi static frame
+	*/
 	updateMaterialCurvature();
 	restCurvature.resize(2, 2*(nNodes - 2));
 	for (int i = 0; i < nNodes - 2; i++)
@@ -92,6 +95,9 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	// Compute Material Curvature
 	updateQuasiStaticFrame();
+
+	// update Material Frame
+	updateMaterialCurvature();
 }
 
 ElasticRod::~ElasticRod()
@@ -108,14 +114,14 @@ bool ElasticRod::assignClampedBoundaryCondition(double theta0, double theta1)
 	rods[nRods -1].theta = theta1;
 
 	updateMaterialCurvature();
-	
-	updateQuasiStaticFrame();
 	for (int i = 0; i < nRods - 1; i++)
 	{
 		restCurvature.col(2 * i) = stencils[i].prevCurvature;
 		restCurvature.col(2 * i + 1) = stencils[i].nextCurvature;
 	}
-	//updateMaterialCurvature();
+	updateQuasiStaticFrame();
+	
+	updateMaterialCurvature();
 	return true;
 }
 
@@ -241,7 +247,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		//std::cout << dkb1 << std::endl;
 	    //std::cout << dkb2 << std::endl;
 
-		for (int i = 0; i <= k+2; i++)
+		for (int i = 0; i <= k+3; i++)
 		{
 			//compute domega
 			Eigen::Vector3d psi(0,0,0);
@@ -304,15 +310,15 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				break;
 			}
 			psi.setZero();
-			if (i >= 2 && i <= k + 1)
+			if (i >= 2 && i <= k + 3)
 			{
 				psi -= stencils[i - 2].kb / restLength[i - 1];
 			}
-			if (i >= 1 && i <= k) 
+			if (i >= 1 && i <= k + 2) 
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
 			}
-			if (i <= k - 1)
+			if (i <= k + 1)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
@@ -327,7 +333,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		
 	}
 
-
+	
 	int i, j, k;
 	i = 0; j = 0; k = 0;
 	Eigen::MatrixXd W;
@@ -370,7 +376,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			}
 			if (i >= 2 && i <= k + 2)
 			{
-				psi -= stencils[i - 2].kb / restLength[i - 1];
+				psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			}
 			std::cout << psi.transpose() << std::endl;
 			if (i >= 1 && i <= k + 1)
@@ -382,8 +388,9 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
-			std::cout << psi.transpose() << std::endl;
 			psi /= 2;
+			std::cout << psi.transpose() << std::endl;
+			std::cout << M << std::endl;
 			W = (M - J * stencils[k].prevCurvature*psi.transpose());
 		}
 		else
@@ -406,50 +413,53 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				break;
 			}
 			psi.setZero();
-			if (i >= 2 && i <= k + 1)
+			if (i >= 2 && i <= k + 3)
 			{
-				psi -= stencils[i - 2].kb / restLength[i - 1];
+				psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			}
-			if (i >= 1 && i <= k)
+			if (i >= 1 && i <= k + 2)
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
 			}
-			if (i <= k - 1)
+			if (i <= k + 1)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
 			psi /= 2;
+			std::cout << psi.transpose() << std::endl;
 			W = (M - J * stencils[k].nextCurvature*psi.transpose());
 		}
 		
 	};
-	Eigen::Vector2d w = stencils[3].prevCurvature;
+
+	Eigen::Vector2d w = stencils[0].prevCurvature;
 	Eigen::Vector3d kb = stencils[0].kb;
 
 	std::cout << "Original Curvature is : " << w.transpose() << std::endl;
+	Eigen::VectorXd direction = Eigen::VectorXd::Random(3);
+	direction.normalize();
+
 	for (int k = 3; k <= 12; k++)
 	{
 		double eps = pow(10, -k);
-		Eigen::VectorXd direction = Eigen::VectorXd::Random(3);
-		direction.normalize();
 		Eigen::MatrixXd dW;
-		nodes[3].pos += direction*eps;
+		nodes[0].pos += direction*eps;
 		int nrods = (int)rods.size();
 		updateAfterPosChange();
-		func(dW, 3, 0, 0);
+		func(dW, 0, 0, 0);
 
-		Eigen::Vector2d epsW = stencils[3].prevCurvature;
+		Eigen::Vector2d epsW = stencils[0].prevCurvature;
 		std::cout << "Curvature is: " << epsW.transpose() << std::endl;
 		std::cout << "EPS is: " << eps << std::endl;
 		std::cout << "Norm of Finite Difference is: " << (epsW - w).norm() / eps << std::endl;
 		std::cout << "Norm of Directinal Gradient is: " << (dW*direction).norm() << std::endl;
 		std::cout << "The difference between above two is: " << ((epsW - w) / eps - dW * direction).norm() << std::endl << std::endl;
 
-		nodes[3].pos -= direction * eps;
+		nodes[0].pos -= direction * eps;
 		updateAfterPosChange();
-		
-	}
 	
+	}
+
 	//std::cout << "3:" << f.norm() << std::endl;
 	if (bcStats == BC_FIXED_END)
 	{
