@@ -67,10 +67,10 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 	{
 		ImGui::InputDouble("Density", &params_.rodDensity);
 		ImGui::InputDouble("Twisting Stiffness", &params_.rodTwistStiffness);
-		ImGui::InputDouble("Bending Modulus (0,0)", &params_.rodBendingModulus(0, 0));
-		ImGui::InputDouble("Bending Modulus (0,1)", &params_.rodBendingModulus(0, 1));
-		ImGui::InputDouble("Bending Modulus (1,0)", &params_.rodBendingModulus(1, 0));
-		ImGui::InputDouble("Bending Modulus (1,1)", &params_.rodBendingModulus(1, 1));
+		ImGui::InputDouble("B(0,0)", &params_.rodBendingModulus(0, 0));
+		ImGui::InputDouble("B(0,1)", &params_.rodBendingModulus(0, 1));
+		ImGui::InputDouble("B(1,0)", &params_.rodBendingModulus(1, 0));
+		ImGui::InputDouble("B(1,1)", &params_.rodBendingModulus(1, 1));
 		ImGui::Combo("Boundary Conditions", (int *)&params_.boundaryCondition, "Free\0Clamped End\0\0");
 	}
 
