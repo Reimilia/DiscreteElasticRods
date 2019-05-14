@@ -11,6 +11,7 @@ class PhysicsHook
 public:
 	PhysicsHook() : sim_thread(NULL), please_pause(false), please_die(false), running(false)
 	{
+		isNewPause_ = false;
 	}
 
 	virtual ~PhysicsHook()
@@ -114,6 +115,8 @@ public:
 		renderRenderGeometry(viewer);
 		render_mutex.unlock();
 	}
+
+	bool isNewPause_;
 
 protected:
 	void runSimThread()

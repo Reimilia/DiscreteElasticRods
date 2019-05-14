@@ -46,9 +46,6 @@ public:
 		viewer.data().set_mesh(renderQ, renderF);
 	}
 
-	// Added Test function
-	void testForceDifferential();
-
 	void saveConfiguration(std::string filePath);
 	void loadConfiguration(std::string filePath);
 

@@ -1,5 +1,5 @@
 #include "ElasticRod.h"
-#include <Eigen/SparseQR>
+#include "SimParameters.h"
 #include <iostream>
 
 ElasticRod::ElasticRod()
@@ -37,6 +37,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 		double l = (nodes[i + 1].pos - nodes[i].pos).norm();
 		rods.push_back(ElasticRodSegment(i,i+1,params.rodDensity * l,l));
 		restLength[i] = l;
+		restLength[i] = l;
 		nodes[i].mass += params.rodDensity * l / 2;
 		nodes[i + 1].mass += params.rodDensity * l / 2;
 	}
@@ -59,7 +60,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	params = para;
 
-	beta = 1.0;
+	beta = params.rodTwistStiffness;
 
 	//Precompute something
 
@@ -76,7 +77,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	rods[0].u = u0;
 	rods[0].v = v0;*/
 
-	bcStats = BC_FREE;
+	params.boundaryCondition = SimParameters::BC_FREE;
 	
 	// Compute the bishop frame
 	updateBishopFrame();
@@ -108,7 +109,7 @@ bool ElasticRod::assignClampedBoundaryCondition(double theta0, double theta1)
 {
 	// Ususally theta0=0
 
-	bcStats = BC_FIXED_END;
+	params.boundaryCondition = SimParameters::BC_FIXED_END;
 	rods[0].theta = theta0;
 	int nRods = (int)rods.size();
 	rods[nRods -1].theta = theta1;
@@ -127,7 +128,9 @@ bool ElasticRod::assignClampedBoundaryCondition(double theta0, double theta1)
 
 bool ElasticRod::assignRigidBodyBoundaryCondition(int idx0, int idx1)
 {
-	bcStats = BC_RIGIDBODY_END;
+	// TODO: Finish rigid body coupling
+	params.boundaryCondition = SimParameters::BC_RIGIDBODY_END;
+	// If id is -1, then treat as free ending
 	leftRigidBody = idx0;
 	rightRigidBody = idx1;
 	return true;
@@ -273,16 +276,16 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				M.setZero();
 				break;
 			}
-			if (i >= 2 && i <= k + 2)
+			if (i >= 2 && i <= k + 1)
 			{
 				psi -= stencils[i - 2].kb / restLength[i - 1];
 			}
-			if (i >= 1 && i <= k + 1)
+			if (i >= 1 && i <= k)
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] +  stencils[i - 1].kb / restLength[i];
 			}
 
-			if (i <= k)
+			if (i <= k-1)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
@@ -310,15 +313,15 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				break;
 			}
 			psi.setZero();
-			if (i >= 2 && i <= k + 3)
+			if (i >= 2 && i <= k + 2)
 			{
 				psi -= stencils[i - 2].kb / restLength[i - 1];
 			}
-			if (i >= 1 && i <= k + 2) 
+			if (i >= 1 && i <= k + 1) 
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
 			}
-			if (i <= k + 1)
+			if (i <= k)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
@@ -333,6 +336,8 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		
 	}
 
+	
+	/* Test code, found numerical difference in force computation :(
 	
 	int i, j, k;
 	i = 0; j = 0; k = 0;
@@ -374,17 +379,17 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				M.setZero();
 				break;
 			}
-			if (i >= 2 && i <= k + 2)
+			if (i >= 2 && i <= k + 1)
 			{
 				psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			}
 			std::cout << psi.transpose() << std::endl;
-			if (i >= 1 && i <= k + 1)
+			if (i >= 1 && i <= k)
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
 			}
 			std::cout << psi.transpose() << std::endl;
-			if (i <= k)
+			if (i <= k - 1)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
@@ -413,15 +418,15 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				break;
 			}
 			psi.setZero();
-			if (i >= 2 && i <= k + 3)
+			if (i >= 2 && i <= k + 2)
 			{
 				psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			}
-			if (i >= 1 && i <= k + 2)
+			if (i >= 1 && i <= k + 1)
 			{
 				psi = psi - stencils[i - 1].kb / restLength[i - 1] + stencils[i - 1].kb / restLength[i];
 			}
-			if (i <= k + 1)
+			if (i <= k)
 			{
 				psi = psi + stencils[i].kb / restLength[i];
 			}
@@ -433,7 +438,6 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 	};
 
 	Eigen::Vector2d w = stencils[0].prevCurvature;
-	Eigen::Vector3d kb = stencils[0].kb;
 
 	std::cout << "Original Curvature is : " << w.transpose() << std::endl;
 	Eigen::VectorXd direction = Eigen::VectorXd::Random(3);
@@ -458,10 +462,9 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		nodes[0].pos -= direction * eps;
 		updateAfterPosChange();
 	
-	}
-
+	}*/
 	//std::cout << "3:" << f.norm() << std::endl;
-	if (bcStats == BC_FIXED_END)
+	if (params.boundaryCondition == SimParameters::BC_FIXED_END)
 	{
 		double dEdtheta = (stencils[nstencils - 1].nextCurvature.dot(J * rods[nstencils].bendingModulus* (stencils[nstencils - 1].nextCurvature - restCurvature.col(2 * nstencils - 1))) +
 			2 * beta * (rods[nstencils].theta - rods[nstencils - 1].theta)) / stencils[nstencils - 1].restlength;
@@ -604,11 +607,11 @@ void ElasticRod::updateQuasiStaticFrame()
 		//std::cout << thetas.transpose() << std::endl;
 		computeEnergyThetaDifferentialAndHessian(thetas, dE, lowerH, centerH, upperH);
 		//std::cout << dE.norm() << std::endl;
-		switch (bcStats)
+		switch (params.boundaryCondition)
 		{
-		case BC_FREE:
+		case SimParameters::BC_FREE:
 			break;
-		case BC_FIXED_END:
+		case SimParameters::BC_FIXED_END:
 			/*
 			Change matrix as:
 			1 0 0 ...
@@ -631,25 +634,8 @@ void ElasticRod::updateQuasiStaticFrame()
 			break;
 		}
 		
-		//std::cout << lowerH.transpose() << std::endl;
-		//std::cout << centerH.transpose() << std::endl;
-		//std::cout << upperH.transpose() << std::endl;
 		MatrixMath::tridiagonalSolver(lowerH, centerH, upperH, dE);
-		//std::cout << dE;
 		thetas -= dE;
-		/*Eigen::SparseMatrix<double> H;
-		H.resize(thetas.size(), thetas.size());
-		std::vector<Eigen::Triplet<double>> hTriplet;
-		for (int i = 0; i < centerH.size(); i++)
-		{
-			if (i > 0) hTriplet.push_back(Eigen::Triplet<double>(i, i - 1, lowerH[i]));
-			hTriplet.push_back(Eigen::Triplet<double>(i, i, centerH[i]));
-			if (i < centerH.size() - 1) hTriplet.push_back(Eigen::Triplet<double>(i, i + 1, upperH[i]));
-		}
-		H.setFromTriplets(hTriplet.begin(), hTriplet.end());
-		Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-		solver.compute(H);
-		thetas -= solver.solve(dE);*/
 		
 
 	}
@@ -682,18 +668,27 @@ void ElasticRod::updateBishopFrame()
 	{
 		rods[i].t = nodes[i + 1].pos - nodes[i].pos;
 		rods[i].t = (rods[i].t) / (rods[i].t).norm();
-		Eigen::Vector3d n = (rods[i-1].t).cross(rods[i].t);
+		Eigen::Vector3d n = (rods[i - 1].t).cross(rods[i].t);
 
 		// Watchout!
-		if (rods[i].t.dot(rods[i - 1].t) > 0)
+		if (n.norm() < 1e-10)
 		{
-			rods[i].u = VectorMath::rotationMatrix(n*asin(n.norm()) / n.norm()) * rods[i - 1].u;
+			rods[i].u = rods[i - 1].u;
 		}
 		else
 		{
-			rods[i].u = VectorMath::rotationMatrix(n*(M_PI - asin(n.norm())) / n.norm()) * rods[i - 1].u;
+			if (rods[i].t.dot(rods[i - 1].t) > 0)
+			{
+				rods[i].u = VectorMath::rotationMatrix(n*asin(n.norm()) / n.norm()) * rods[i - 1].u;
+			}
+			else
+			{
+				rods[i].u = VectorMath::rotationMatrix(n*(M_PI - asin(n.norm())) / n.norm()) * rods[i - 1].u;
+			}
+			
 		}
-
+		//rods[i].u = VectorMath::rotationMatrix(stencils[i-1].kb) * rods[i-1].u;
+		
 		rods[i].u = (rods[i].u) / (rods[i].u).norm();
 
 		rods[i].v = (rods[i].t).cross(rods[i].u);

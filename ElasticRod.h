@@ -11,12 +11,7 @@
 #include "SimParameters.h"
 
 // Boundary conodition for the rod
-enum BoundaryCondition
-{
-	BC_FREE,
-	BC_FIXED_END,
-	BC_RIGIDBODY_END
-};
+
 
 class ElasticRod
 {
@@ -93,10 +88,6 @@ private:
 
 	// Twisting Coefficient
 	double beta;
-
-
-	BoundaryCondition bcStats;
-
 	
 	
 

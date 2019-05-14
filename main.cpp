@@ -13,10 +13,17 @@ void toggleSimulation()
     if (!hook)
         return;
 
-    if (hook->isPaused())
-        hook->run();
-    else
-        hook->pause();
+	if (hook->isPaused())
+	{
+		hook->isNewPause_ = false;
+		hook->run();
+	}
+	else
+	{
+		hook->isNewPause_ = true;
+		hook->pause();
+	}
+        
 }
 
 void resetSimulation()

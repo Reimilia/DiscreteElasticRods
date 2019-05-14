@@ -12,7 +12,7 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 	{
 		float w = ImGui::GetContentRegionAvailWidth();
 		float p = ImGui::GetStyle().FramePadding.x;
-		if (ImGui::Button("Load", ImVec2((w - p) / 2.f, 0)))
+		/*if (ImGui::Button("Load", ImVec2((w - p) / 2.f, 0)))
 		{
 			if (!isPaused())
 				pause();
@@ -24,7 +24,7 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 		{
 			std::string filePath = igl::file_dialog_save();
 			saveConfiguration(filePath);
-		}
+		}*/
 
 		//Test Part
 		if (ImGui::Button("Test", ImVec2(-1, 0)))
@@ -32,11 +32,11 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 			testProcess();
 		}
 	}
-	if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
+	/*if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0\0");
 		ImGui::Combo("Connector Type", (int *)&params_.connectorType, "Flexible Rods\0\0");
-	}
+	}*/
 	if (ImGui::CollapsingHeader("Simulation Options", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		//ImGui::Combo("Constraint Handling", (int *)&params_.constraintHandling, "Penalty Method\0Step and Project\0Lagrange Multipliers\0\0");
@@ -44,31 +44,34 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 		ImGui::InputDouble("Timestep", &params_.timeStep);
 		ImGui::InputDouble("Newton Tolerance", &params_.NewtonTolerance);
 		ImGui::InputInt("Newton Max Iters", &params_.NewtonMaxIters);
-		ImGui::InputDouble("Penalty Stiffness", &params_.penaltyStiffness);
+		//ImGui::InputDouble("Penalty Stiffness", &params_.penaltyStiffness);
 	}
 	if (ImGui::CollapsingHeader("Forces", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		ImGui::Checkbox("Gravity Enabled", &params_.gravityEnabled);
 		ImGui::InputDouble("  Gravity g", &params_.gravityG);
 		ImGui::Checkbox("Floor Enabled", &params_.floorEnabled);
-		ImGui::Checkbox("Bending Enabled", &params_.bendingEnabled);
-		ImGui::Checkbox("Twist Enabled", &params_.twistEnabled);
+		//ImGui::Checkbox("Bending Enabled", &params_.bendingEnabled);
+		//ImGui::Checkbox("Twist Enabled", &params_.twistEnabled);
 		//viewer.imgui->addWindow(Eigen::Vector2i(1000, 0), "New Objects");
 	}
 
 
 	if (ImGui::CollapsingHeader("New Particles", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::Checkbox("Is Fixed", &params_.particleFixed);
+		//ImGui::Checkbox("Is Fixed", &params_.particleFixed);
 		ImGui::InputDouble("Mass", &params_.particleMass);
 	}
 
 	if (ImGui::CollapsingHeader("New Rods", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::InputInt("Num Segments", &params_.rodSegments);
 		ImGui::InputDouble("Density", &params_.rodDensity);
-		ImGui::InputDouble("Stretching Stiffness", &params_.rodStretchingStiffness);
-		ImGui::InputDouble("Bending Stiffness", &params_.rodBendingStiffness);
+		ImGui::InputDouble("Twisting Stiffness", &params_.rodTwistStiffness);
+		ImGui::InputDouble("Bending Modulus (0,0)", &params_.rodBendingModulus(0, 0));
+		ImGui::InputDouble("Bending Modulus (0,1)", &params_.rodBendingModulus(0, 1));
+		ImGui::InputDouble("Bending Modulus (1,0)", &params_.rodBendingModulus(1, 0));
+		ImGui::InputDouble("Bending Modulus (1,1)", &params_.rodBendingModulus(1, 1));
+		ImGui::Combo("Boundary Conditions", (int *)&params_.boundaryCondition, "Free\0Clamped End\0\0");
 	}
 
 }
@@ -192,9 +195,7 @@ void ElasticHook::updateRenderGeometry()
 			Eigen::Matrix3d rotation;
 			rotation.col(0) = onebar.t;
 
-			// Interpolate theta
-
-			
+			// TODO : Interpolate theta
 			rotation.col(1) = cos(onebar.theta) * onebar.u + sin(onebar.theta) * onebar.v;
 			rotation.col(2) = -sin(onebar.theta) * onebar.u + cos(onebar.theta) * onebar.v;
 			//rotation.col(1) = onebar.u;
@@ -301,26 +302,37 @@ void ElasticHook::addParticle(double x, double y, double z)
 
 	//RigidBodyInstance *rbi = new RigidBodyInstance(*ballTemplate_, newpos, zero, zero, zero, 1);
 	//bodies_.push_back(rbi);
-
-	particles_.push_back(Particle(newpos, 0, false, false));
-
-	particles_[0].fixed = true;
-	particles_[(int)particles_.size() - 1].fixed = true;
-	
-	if ((int)rods_.size()>0)
+	if (isNewPause_)
 	{
-		delete rods_.back();
-		rods_.pop_back();
-		rods_.push_back(new ElasticRod(particles_, params_));
-		rods_.back()->assignClampedBoundaryCondition(0, M_PI);
+		std::cout << "Here!" << std::endl;
+		particles_.clear();
+		particles_.shrink_to_fit();
+		isNewPause_ = false;
 	}
 	else
 	{
-		rods_.push_back(new ElasticRod(particles_, params_));
+		if ((int)rods_.size() > 0) 
+		{
+			delete rods_.back();
+			rods_.pop_back();
+		}
 	}
+	particles_.push_back(Particle(newpos, params_.particleMass,false, false));
 
+	particles_[0].fixed = true;
+	particles_[(int)particles_.size() - 1].fixed = true;
+	rods_.push_back(new ElasticRod(particles_, params_));
+	// Assign Boundary Condition
+	// TODO: Assign Rigid body condition
+	if (params_.boundaryCondition == SimParameters::BC_FIXED_END)
+	{
+		if ((int)particles_.size() > 1)
+		{
+			rods_.back()->assignClampedBoundaryCondition(0, M_PI);
+		}
+	}
+	
 	particles_[(int)particles_.size() - 1].fixed = false;
-
 }
 
 void ElasticHook::buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel)
@@ -427,6 +439,7 @@ bool ElasticHook::numericalIntegration()
 	}
 	
 	// Lagrangian, solved via Newton's method
+	// TODO : Add Rigid body coupling constraint
 	
 	Eigen::VectorXd pos, vel;
 	buildConfiguration(pos, vel);
@@ -664,7 +677,7 @@ void ElasticHook::testProcess()
 		thetas[i] = temprod->getRodSegment(i).theta;
 	}
 
-	std::cout << "Test centerline force\n";
+	std::cout << "\n\nTest centerline force:\n";
 	auto energyFunc = [temprod](const Eigen::VectorXd &q) {
 		Eigen::VectorXd dummy,v;
 		temprod->buildConfiguration(dummy, v);
@@ -685,10 +698,8 @@ void ElasticHook::testProcess()
 	};
 
 	TestModule::testEnergyDifferential(pos, energyFunc, forceFunc);
-	//delete temprod;
 
-	std::cout << "Test Theta Force\n";
-	//temprod = new ElasticRod(rod.nodes, params_);
+	std::cout << "\n\nTest Theta Force\n";
 
 	auto energyThetaFunc = [temprod](const Eigen::VectorXd &q) {
 		Eigen::VectorXd tmp;
@@ -714,12 +725,8 @@ void ElasticHook::testProcess()
 	};
 
 	TestModule::testEnergyDifferential(thetas, energyThetaFunc, thetaForceFunc);
-	//delete temprod;
 
-
-	//temprod = new ElasticRod(rod.nodes, params_);
-
-	std::cout << "Test Theta Hessian\n";
+	std::cout << "\n\nTest Theta Hessian\n";
 	auto thetaFunc = [temprod](const Eigen::VectorXd &q, Eigen::VectorXd &f, Eigen::SparseMatrix<double> &H) {
 		Eigen::VectorXd lowerH, centerH, upperH;
 		temprod->computeEnergyThetaDifferentialAndHessian(q, f, lowerH, centerH, upperH);
@@ -738,55 +745,12 @@ void ElasticHook::testProcess()
 	temprod = NULL;
 }
 
-
-void ElasticHook::testForceDifferential()
-{
-
-	/*Eigen::VectorXd q, vel, qPrev;
-	buildConfiguration(q, vel, qPrev);
-
-	// Note: Now previous position will not add to buildConfiguration since we do not need it.
-	// If we have to implement some other numerical integrator we need to change buildConfiguration and
-	// unbuildConfiguration
-	qPrev.resize(q.size());
-	for (int i = 0; i<(int)particles_.size(); i++)
-	{
-	qPrev.segment<2>(2 * i) = particles_[i].prevpos;
-	}
-
-	Eigen::SparseMatrix<double> gradF(q.size(), q.size());
-	gradF.setZero();
-	Eigen::VectorXd f = Eigen::VectorXd::Zero(q.size());
-	computeForceAndHessian(q, qPrev, f, gradF);
-
-	Eigen::VectorXd direction = Eigen::VectorXd::Random(q.size());
-	for(int i=0;i<particles_.size();i++)
-	{
-	if(particles_[i].fixed)
-	direction.segment(2*i, 2).setZero();
-	}
-	direction.normalize();
-
-	for (int k = 1; k <= 12; k++)
-	{
-	double eps = pow(10, -k);
-
-	VectorXd epsF = Eigen::VectorXd::Zero(q.size());
-	Eigen::SparseMatrix<double>  epsgradF(q.size(), q.size());
-	computeForceAndHessian(q + eps * direction, qPrev, epsF, epsgradF);
-
-	std::cout << "EPS is: " << eps << std::endl;
-	std::cout << "Norm of Finite Difference is: " << (epsF - f).norm() / eps << std::endl;
-	std::cout << "Norm of Directinal Gradient is: " << (gradF*direction).norm() << std::endl;
-	std::cout << "The difference between above two is: " << ((epsF - f) / eps + gradF*direction).norm() << std::endl << std::endl;
-	}*/
-}
-
-
-
-
 void ElasticHook::loadMesh()
 {
+	/*
+	Load Mesh for Rendering Purposes
+	TODO: Load Ridid bodies
+	*/
 	for (RigidBodyInstance *rbi : bodies_)
 		delete rbi;
 	for (RigidBodyTemplate *rbt : templates_)
@@ -825,172 +789,10 @@ void ElasticHook::loadMesh()
 
 void ElasticHook::saveConfiguration(std::string filePath)
 {
-	/*int nParticles = particles_.size();
-	int nConnectors = connectors_.size();
-	int nBendingStencils = bendingStencils_.size();
-	std::ofstream outfile(filePath, std::ios::trunc);
-
-	outfile << nParticles << "\n";
-	outfile << nConnectors << "\n";
-	outfile << nBendingStencils << "\n";
-
-	for (int i = 0; i<nParticles; i++)
-	{
-	outfile << std::setprecision(16) << particles_[i].pos(0) << "\n";
-	outfile << std::setprecision(16) << particles_[i].pos(1) << "\n";
-	outfile << std::setprecision(16) << particles_[i].prevpos(0) << "\n";
-	outfile << std::setprecision(16) << particles_[i].prevpos(1) << "\n";
-	outfile << std::setprecision(16) << particles_[i].vel(0) << "\n";
-	outfile << std::setprecision(16) << particles_[i].vel(1) << "\n";
-
-	outfile << particles_[i].fixed << "\n";
-	if (!particles_[i].fixed)
-	outfile << std::setprecision(16) << particles_[i].mass << "\n";
-	outfile << particles_[i].inert << "\n";
-	}
-
-	for (int i = 0; i<nConnectors; i++)
-	{
-	outfile << connectors_[i]->getType()<<"\n";
-	outfile << connectors_[i]->p1 << "\n";
-	outfile << connectors_[i]->p2 << "\n";
-	outfile << connectors_[i]->mass << "\n";
-	switch (connectors_[i]->getType())
-	{
-	case SimParameters::CT_SPRING:
-	{
-	Spring &s = *(Spring *) connectors_[i];
-	outfile << s.canSnap << "\n";
-	outfile << std::setprecision(16) << s.stiffness << "\n";
-	break;
-	}
-	case SimParameters::CT_RIGIDROD:
-	{
-	break;
-	}
-	default:
-	std::cout << "Unknown Connector type, your saving might fail.\n";
-	break;
-	}
-	outfile << connectors_[i]->associatedBendingStencils.size() << "\n";
-
-	for (std::set<int>::iterator sit = connectors_[i]->associatedBendingStencils.begin(); sit != connectors_[i]->associatedBendingStencils.end(); ++sit)
-	{
-	outfile << (*sit) << "\n";
-	}
-
-	}
-
-	for (int i = 0; i < nBendingStencils; i++)
-	{
-	outfile << bendingStencils_[i].p1 << "\n";
-	outfile << bendingStencils_[i].p2 << "\n";
-	outfile << bendingStencils_[i].p3 << "\n";
-	outfile << std::setprecision(16) << bendingStencils_[i].kb << "\n";
-	//outfile << std::setprecision(16) << bendingStencils_[i].theta << "\n";
-	}
-	outfile.close();*/
+	//TODO: Save scenes I created
 }
 
 void ElasticHook::loadConfiguration(std::string filePath)
 {
-	/*std::ifstream infile(filePath);
-	if (!infile)
-	return;
-	int nParticles;
-	int nConnectors;
-	int nBendingStencils;
-
-	infile >> nParticles;
-	infile >> nConnectors;
-	infile >> nBendingStencils;
-
-	particles_.clear();
-	// Only available after C++ 11, hopefully won't throw compile error in GDC's computer
-	particles_.shrink_to_fit();
-	connectors_.clear();
-	connectors_.shrink_to_fit();
-	bendingStencils_.clear();
-	bendingStencils_.shrink_to_fit();
-
-
-	for (int i = 0; i < nParticles; i++)
-	{
-	Eigen::Vector2d pos, prevpos, vel;
-	infile >> pos(0);
-	infile >> pos(1);
-	infile >> prevpos(0);
-	infile >> prevpos(1);
-	infile >> vel(0);
-	infile >> vel(1);
-	double mass;
-	bool isFixed;
-	bool isInert;
-
-	infile >> isFixed;
-	if (isFixed)
-	mass = mass = std::numeric_limits<double>::infinity();
-	else
-	infile >> mass;
-	infile >> isInert;
-	Particle newParticle = Particle(pos, mass, isFixed, isInert);
-	newParticle.prevpos = prevpos;
-	newParticle.vel = vel;
-	particles_.push_back(newParticle);
-	}
-
-	for (int i = 0; i < nConnectors; i++)
-	{
-	int p1, p2, type;
-	double mass;
-	infile >> type;
-	infile >> p1;
-	infile >> p2;
-	infile >> mass;
-	double dist = (particles_[p1].pos - particles_[p2].pos).norm();
-
-	Connector* connector;
-	switch (type)
-	{
-	case SimParameters::CT_SPRING:
-	{
-	bool isSnappable;
-	double stiffness;
-	infile >> isSnappable;
-	infile >> stiffness;
-	connector = new Spring(p1, p2, mass, stiffness, dist, isSnappable);
-	break;
-	}
-	case SimParameters::CT_RIGIDROD:
-	{
-	connector = new RigidRod(p1, p2, mass, dist);
-	break;
-	}
-	default:
-	std::cout << "Unknown Connector type, your loading might fail.\n";
-	break;
-	}
-	int nAssociate;
-	infile >> nAssociate;
-	for (int j = 0; j < nAssociate; j++)
-	{
-	int id;
-	infile >> id;
-	connector->associatedBendingStencils.insert(id);
-	}
-	connectors_.push_back(connector);
-	}
-
-	for (int i = 0; i<nBendingStencils; i++)
-	{
-	int p1, p2, p3;
-	double bendingStiffness, theta;
-	infile >> p1;
-	infile >> p2;
-	infile >> p3;
-	infile >> bendingStiffness;
-	//infile >> theta;
-	bendingStencils_.push_back(BendingStencil(p1, p2, p3, bendingStiffness));
-	bendingStencils_[i].theta = theta;
-	}*/
+	//TODO: load scenes I created
 }
