@@ -463,19 +463,21 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		updateAfterPosChange();
 	
 	}*/
-	//std::cout << "3:" << f.norm() << std::endl;
+	std::cout << "3:" << f.norm() << std::endl;
 	if (params.boundaryCondition == SimParameters::BC_FIXED_END)
 	{
-		double dEdtheta = (stencils[nstencils - 1].nextCurvature.dot(J * rods[nstencils].bendingModulus* (stencils[nstencils - 1].nextCurvature - restCurvature.col(2 * nstencils - 1))) +
+		double dEdtheta = 
+			(stencils[nstencils - 1].nextCurvature.dot(J * rods[nstencils].bendingModulus* (stencils[nstencils - 1].nextCurvature - restCurvature.col(2 * nstencils - 1))) +
 			2 * beta * (rods[nstencils].theta - rods[nstencils - 1].theta)) / stencils[nstencils - 1].restlength;
 
 		std::cout << dEdtheta << std::endl;
 		for (int i = 0; i < nparticles; i++)
 		{
-			Eigen::Vector3d psi(0, 0, 0);
+			Eigen::Vector3d psi;	
+			psi.setZero();
 			if (i > 1) psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			if (i > 0 && i <= nstencils) psi = psi + (stencils[i - 1].kb / restLength[i] - stencils[i - 1].kb / restLength[i - 1]);
-			if (i < nstencils) psi = psi + stencils[i].kb / restLength[i];
+			if (i < nstencils) psi = psi + (stencils[i].kb / restLength[i]);
 			psi = psi / 2;
 			f.segment<3>(3 * i) += (dEdtheta * psi);
 		}

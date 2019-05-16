@@ -376,6 +376,7 @@ void ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::
 		rods_[i]->unbuildConfiguration(q, v);
 		offset += ndofs;
 	}
+	
 }
 
 void ElasticHook::computeMassInverse(Eigen::SparseMatrix<double>& mInv)
@@ -471,9 +472,10 @@ bool ElasticHook::numericalIntegration()
 		std::cout << "lambda : " << lambda.norm() << std::endl;
 		std::cout << "F : " << F.norm() << std::endl;
 		std::cout << "gradG : " << gradG.norm() << std::endl;
-		vel += params_.timeStep*mInv_*(F + gradG.transpose()*lambda);
+		vel += (params_.timeStep*mInv_*(F + gradG.transpose()*lambda));
 	}
 	unbuildConfiguration(pos, vel);
+	
 
 	Eigen::VectorXd cForce(3 * nbodies);
 	Eigen::VectorXd thetaForce(3 * nbodies);
@@ -644,7 +646,7 @@ bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::Vec
 		x = x + dx;
 	}
 	//std::cout<<"Maximun iteration reached !!"<<std::endl;
-	return true;
+	return true; 
 }
 
 
