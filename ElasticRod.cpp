@@ -221,7 +221,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 	f.resize(3 * nparticles);
 	f.setZero();
 
-	Eigen::VectorXd dE, upperH, lowerH, centerH;
+	/*Eigen::VectorXd dE, upperH, lowerH, centerH;
 	Eigen::VectorXd thetas;
 	thetas.resize(nstencils + 1);
 
@@ -230,9 +230,10 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		thetas[i] = rods[i].theta;
 	}
 
-	//computeEnergyThetaDifferentialAndHessian(thetas, dE, lowerH, centerH, upperH);
-	//std::cout << "Sanity Check: dE/d\\theta=0 for all free rods : " << dE.norm() << std::endl;
-
+	computeEnergyThetaDifferentialAndHessian(thetas, dE, lowerH, centerH, upperH);
+	dE[0] = dE[nstencils] = 0;
+	std::cout << "Sanity Check: dE/d\\theta=0 for all free rods : " << dE.norm() << std::endl;
+	*/
 	//std::cout << "1:" << f.norm() << std::endl;
 	for (int k = 0; k < nstencils; k++)
 	{
@@ -250,7 +251,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		//std::cout << dkb1 << std::endl;
 	    //std::cout << dkb2 << std::endl;
 
-		for (int i = 0; i <= k+3; i++)
+		for (int i = 0; i <= k+2; i++)
 		{
 			//compute domega
 			Eigen::Vector3d psi(0,0,0);
@@ -290,7 +291,6 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 				psi = psi + stencils[i].kb / restLength[i];
 			}
 			psi /= 2;
-
 			//Assemble force (watch out for minus sign!)
 			f.segment<3>(3 * i) += (-(M - J * stencils[k].prevCurvature*psi.transpose()).transpose()*coef1);
 
@@ -473,11 +473,13 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		for (int i = 0; i < nparticles; i++)
 		{
 			Eigen::Vector3d psi(0, 0, 0);
-			if (i > 1) psi -= stencils[i - 2].kb / 2 / restLength[i - 1];
-			if (i > 0 && i <= nstencils) psi += (stencils[i - 1].kb / 2 / restLength[i] - stencils[i - 1].kb / 2 / restLength[i - 1]);
-			if (i < nstencils) psi += stencils[i].kb / 2 / restLength[i];
-			f.segment<3>(3 * i) += dEdtheta * psi;
+			if (i > 1) psi = psi - stencils[i - 2].kb / restLength[i - 1];
+			if (i > 0 && i <= nstencils) psi = psi + (stencils[i - 1].kb / restLength[i] - stencils[i - 1].kb / restLength[i - 1]);
+			if (i < nstencils) psi = psi + stencils[i].kb / restLength[i];
+			psi = psi / 2;
+			f.segment<3>(3 * i) += (dEdtheta * psi);
 		}
+
 	}
 	std::cout << "4:" << f.norm() << std::endl;
 }
@@ -662,6 +664,7 @@ void ElasticRod::updateBishopFrame()
 	rods[0].u = Eigen::Vector3d(rods[0].t[2] - rods[0].t[1], rods[0].t[0] - rods[0].t[2], rods[0].t[1] - rods[0].t[0]);
 	rods[0].u = rods[0].u / rods[0].u.norm();
 	rods[0].v = rods[0].t.cross(rods[0].u);
+	rods[0].v /= rods[0].v.norm();
 
 	// Now compute Bishop frame
 	for (int i = 1; i < nRods; i++)
