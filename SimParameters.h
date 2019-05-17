@@ -11,7 +11,7 @@ struct SimParameters
 		integrator = TI_VELOCITY_VERLET;
         timeStep = 0.0001;
         NewtonMaxIters = 20;
-        NewtonTolerance = 1e-12;
+        NewtonTolerance = 1e-10;
         penaltyStiffness = 1e5;
 
         gravityEnabled = true;
@@ -31,15 +31,18 @@ struct SimParameters
         //maxSpringDist = 1e5;
         particleFixed = false;
 
-        rodDensity = 2;
-		rodTwistStiffness = 2;
+        rodDensity = 10;
+		rodTwistStiffness = 0.5;
 		//rodStretchingStiffness = 100;
         //rodBendingStiffness = 0.05;
-        //rodSegments = 5;
+        rodSegments = 5;
 
         //sawRadius= 0.1;
-		rodBendingModulus = 2 * Eigen::Matrix2d::Identity();
+		rodBendingModulus = 0.5 * Eigen::Matrix2d::Identity();
 		boundaryCondition = BC_FREE;
+
+		leftendTheta = 0;
+		rightendTheta = M_PI / 3.0;
     }
 
 	enum BoundaryCondition
@@ -81,7 +84,9 @@ struct SimParameters
 
 	double rodDensity;
 	double rodTwistStiffness;
+	int rodSegments;
 	Eigen::Matrix2d rodBendingModulus;
+	double leftendTheta, rightendTheta;
 };
 
 #endif

@@ -21,8 +21,9 @@ public:
 	~ElasticRod();
 
 	// Assign Boundary Condition
-	bool assignClampedBoundaryCondition(double theta0, double theta1);
-	bool assignRigidBodyBoundaryCondition(int idx0, int idx1);
+	//bool assignClampedBoundaryCondition(double theta0, double theta1);
+	//bool assignRigidBodyBoundaryCondition(int idx0, int idx1);
+	bool setSimulationParameters(SimParameters para);
 
 	// Tell the rendering program where a point belongs to a rod element need to be rendered in world coordinate.
 	// This program shall interpolate and return the coordinate. The rotation is 
@@ -48,8 +49,7 @@ public:
 	// https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm
 	void computeEnergyThetaDifferentialAndHessian(const Eigen::VectorXd &theta,Eigen::VectorXd &dE, Eigen::VectorXd &lowerH, Eigen::VectorXd &centerH, Eigen::VectorXd &upperH);
 
-	// Particles
-	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
+	
 	// Rigid body id, if free or clamped only, -1 will be put here;
 	int leftRigidBody, rightRigidBody;
 
@@ -66,32 +66,40 @@ public:
 	const ElasticRodSegment & getRodSegment(int index) { return rods[index]; }
 	const BendingStencil & getStencilSegment(int index) { return stencils[index]; }
 
+	inline int getNodeNumbers() { return (int)nodes.size(); }
+	inline int getRodNumbers() { return (int)rods.size(); }
+	inline int getStencilNumbers() { return (int)stencils.size(); }
 
-	// Rod Segments
-	std::vector<ElasticRodSegment> rods;
 
+	
 	// Update theta
-	void updateQuasiStaticFrame();
+	bool updateQuasiStaticFrame();
 	// Compute local parallel transport coordinate frame for each rod segments
 	void updateBishopFrame();
 	// Update all curvature assigned with bending stencils.
 	void updateMaterialCurvature();
+
 private:
 	// Material Frame (Relatively for 0-th index point)
 	Eigen::Vector3d u0, v0, t0;
 
+	
+	// Particles
+	std::vector<Particle, Eigen::aligned_allocator<Particle>> nodes;
+
+	// Rod Segments
+	std::vector<ElasticRodSegment> rods;
+
 	// Use bending stencils to control the binormal curvature and material curvature.
 	std::vector <BendingStencil> stencils;
-	
-	// Bending Modulus
-	// Eigen::Matrix2d B;
 
 	// Twisting Coefficient
 	double beta;
 	
-	
+
 
 	SimParameters params;
+
 
 };
 

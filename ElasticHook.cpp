@@ -29,7 +29,8 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 		//Test Part
 		if (ImGui::Button("Test", ImVec2(-1, 0)))
 		{
-			testProcess();
+			testLagrangeMultiple();
+			testConstraintAndGradient();
 		}
 	}
 	/*if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
@@ -65,6 +66,7 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 
 	if (ImGui::CollapsingHeader("New Rods", ImGuiTreeNodeFlags_DefaultOpen))
 	{
+		ImGui::InputInt("Rods per click", &params_.rodSegments);
 		ImGui::InputDouble("Density", &params_.rodDensity);
 		ImGui::InputDouble("Twisting Stiffness", &params_.rodTwistStiffness);
 		ImGui::InputDouble("B(0,0)", &params_.rodBendingModulus(0, 0));
@@ -72,6 +74,9 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 		ImGui::InputDouble("B(1,0)", &params_.rodBendingModulus(1, 0));
 		ImGui::InputDouble("B(1,1)", &params_.rodBendingModulus(1, 1));
 		ImGui::Combo("Boundary Conditions", (int *)&params_.boundaryCondition, "Free\0Clamped End\0\0");
+		ImGui::InputDouble("Left End Rotation", &params_.leftendTheta);
+		ImGui::InputDouble("Right End Rotation", &params_.rightendTheta);
+
 	}
 
 }
@@ -107,7 +112,7 @@ void ElasticHook::updateRenderGeometry()
 
 	for (ElasticRod *rod : rods_)
 	{
-		int nverts = rod->nodes.size();
+		int nverts = rod->getNodeNumbers();
 		totverts += nverts * ballTemplate_->getVerts().rows() + (nverts - 1) * rodTemplate_->getVerts().rows();
 		totfaces += nverts * ballTemplate_->getFaces().rows() + (nverts - 1) * rodTemplate_->getFaces().rows();
 	}
@@ -168,12 +173,12 @@ void ElasticHook::updateRenderGeometry()
 	Eigen::Vector3d dir0(1, 0, 0);
 	for (ElasticRod *rod : rods_)
 	{
-		int nParticles = rod->nodes.size();
+		int nParticles = rod->getNodeNumbers();
 		for (int k = 0; k < nParticles; k++)
 		{
 			int nverts = ballTemplate_->getVerts().rows();
 			for (int i = 0; i < nverts; i++)
-				renderQ.row(voffset + i) = (rod->nodes[k].pos + ballTemplate_->getVerts().row(i).transpose()).transpose();
+				renderQ.row(voffset + i) = (rod->getNodeSegment(k).pos + ballTemplate_->getVerts().row(i).transpose()).transpose();
 			int nfaces = ballTemplate_->getFaces().rows();
 			for (int i = 0; i < nfaces; i++)
 			{
@@ -298,7 +303,6 @@ bool ElasticHook::simulateOneStep()
 void ElasticHook::addParticle(double x, double y, double z)
 {
 	Eigen::Vector3d newpos(x, y, z);
-	Eigen::Vector3d zero(0, 0, 0);
 
 	//RigidBodyInstance *rbi = new RigidBodyInstance(*ballTemplate_, newpos, zero, zero, zero, 1);
 	//bodies_.push_back(rbi);
@@ -317,21 +321,32 @@ void ElasticHook::addParticle(double x, double y, double z)
 			rods_.pop_back();
 		}
 	}
-	particles_.push_back(Particle(newpos, params_.particleMass,false, false));
+
+	if (particles_.empty())
+	{
+		particles_.push_back(Particle(newpos, params_.particleMass, false, false));
+	}
+	else 
+	{
+		std::cout << "Here!\n";
+		Eigen::Vector3d oldpos;
+		oldpos = particles_.back().pos;
+		for (int k = 1; k <= params_.rodSegments; k++)
+		{
+			Eigen::Vector3d pos;
+			pos = (params_.rodSegments - k) * 1.0 / params_.rodSegments * oldpos + k * 1.0 / params_.rodSegments * newpos;
+			particles_.push_back(Particle(pos, params_.particleMass, false, false));
+		}
+
+	}
+	
 
 	particles_[0].fixed = true;
 	particles_[(int)particles_.size() - 1].fixed = true;
 	rods_.push_back(new ElasticRod(particles_, params_));
 	// Assign Boundary Condition
 	// TODO: Assign Rigid body condition
-	if (params_.boundaryCondition == SimParameters::BC_FIXED_END)
-	{
-		if ((int)particles_.size() > 1)
-		{
-			rods_.back()->assignClampedBoundaryCondition(0, M_PI);
-		}
-	}
-	
+	rods_.back()->setSimulationParameters(params_);
 	particles_[(int)particles_.size() - 1].fixed = false;
 }
 
@@ -340,7 +355,7 @@ void ElasticHook::buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel)
 	int nconfigurations = 0;
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
-		nconfigurations += (3 * rods_[i]->nodes.size());
+		nconfigurations += (3 * rods_[i]->getNodeNumbers());
 	}
 
 	pos.resize(nconfigurations);
@@ -359,13 +374,13 @@ void ElasticHook::buildConfiguration(Eigen::VectorXd &pos, Eigen::VectorXd &vel)
 	}
 }
 
-void ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::VectorXd &vel)
+bool ElasticHook::unbuildConfiguration(const Eigen::VectorXd &pos, const Eigen::VectorXd &vel)
 {
 	int offset = 0;
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
 		Eigen::VectorXd q, v;
-		int ndofs = 3 * rods_[i]->nodes.size();
+		int ndofs = 3 * rods_[i]->getNodeNumbers();
 		q.resize(ndofs);
 		v.resize(ndofs);
 		for (int k = 0; k < ndofs; k++)
@@ -389,14 +404,14 @@ void ElasticHook::computeMassInverse(Eigen::SparseMatrix<double>& mInv)
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
 		ElasticRod & rod = *rods_[i];
-		int nParticles = (int)rod.nodes.size();
+		int nParticles = rod.getNodeNumbers();
 		for (int k = 0; k < nParticles; k++)
 		{
 			double massInverse;
-			if (rod.nodes[k].fixed)
+			if (rod.getNodeSegment(k).fixed)
 				massInverse = 0;
 			else
-				massInverse = 1.0 / rod.nodes[k].mass;
+				massInverse = 1.0 / rod.getNodeSegment(k).mass;
 			for (int j = 0; j < 3; j++)
 			{
 				massInvTriplet.push_back(Eigen::Triplet<double>(3 * (offset + k) + j, 3 * (offset + k) + j, massInverse));
@@ -418,64 +433,80 @@ void ElasticHook::computeMassInverse(Eigen::SparseMatrix<double>& mInv)
 bool ElasticHook::numericalIntegration()
 {
 	// Unconstrained update
+	// Adaptive Stepsize
 	int nbodies = (int)bodies_.size();
-
-	std::vector<Eigen::Vector3d> oldthetas;
-	for (int bodyidx = 0; bodyidx < (int)bodies_.size(); bodyidx++)
+	double prevtimestep = params_.timeStep;
+	for (double k = 1.0; k > 1e-3; k /= 2)
 	{
-		RigidBodyInstance &body = *bodies_[bodyidx];
-		body.c += params_.timeStep*body.cvel;
-		Eigen::Matrix3d Rhw = VectorMath::rotationMatrix(params_.timeStep*body.w);
-		Eigen::Matrix3d Rtheta = VectorMath::rotationMatrix(body.theta);
-
-		Eigen::Vector3d oldtheta = body.theta;
-		body.theta = VectorMath::axisAngle(Rtheta*Rhw);
-		if (body.theta.dot(oldtheta) < 0 && oldtheta.norm() > M_PI / 2.0)
+		params_.timeStep = prevtimestep * k;
+		std::vector<Eigen::Vector3d> oldthetas;
+		for (int bodyidx = 0; bodyidx < (int)bodies_.size(); bodyidx++)
 		{
-			double oldnorm = oldtheta.norm();
-			oldtheta = (oldnorm - 2.0*M_PI)*oldtheta / oldnorm;
+			RigidBodyInstance &body = *bodies_[bodyidx];
+			body.c += params_.timeStep*body.cvel;
+			Eigen::Matrix3d Rhw = VectorMath::rotationMatrix(params_.timeStep*body.w);
+			Eigen::Matrix3d Rtheta = VectorMath::rotationMatrix(body.theta);
+
+			Eigen::Vector3d oldtheta = body.theta;
+			body.theta = VectorMath::axisAngle(Rtheta*Rhw);
+			if (body.theta.dot(oldtheta) < 0 && oldtheta.norm() > M_PI / 2.0)
+			{
+				double oldnorm = oldtheta.norm();
+				oldtheta = (oldnorm - 2.0*M_PI)*oldtheta / oldnorm;
+			}
+			body.oldtheta = oldtheta;
+			oldthetas.push_back(oldtheta);
 		}
-		body.oldtheta = oldtheta;
-		oldthetas.push_back(oldtheta);
+	
+		// Lagrangian, solved via Newton's method
+		// TODO : Add Rigid body coupling constraint
+	
+		Eigen::VectorXd prevpos, pos, vel;
+		buildConfiguration(pos, vel);
+		prevpos = pos;
+		pos += params_.timeStep * vel;
+		bool tag = unbuildConfiguration(pos, vel);
+		if (!tag)
+		{
+			unbuildConfiguration(prevpos, vel);
+			continue;
+		}
+
+		Eigen::VectorXd F;
+		F.resizeLike(pos);
+		F.setZero();
+		computeForce(F);
+
+		//std::cout << F.size() << std::endl;
+
+		Eigen::SparseMatrix<double> gradG;
+		Eigen::VectorXd g, lambda;
+		computeContraintsAndGradient(pos, g, gradG);
+
+		lambda.resizeLike(g);
+		lambda.setZero();
+
+
+		bool flag = newtonSolver(lambda, [this, &pos, &vel, &F](Eigen::VectorXd lambda , Eigen::VectorXd &f, Eigen::SparseMatrix<double> &gradF)
+		{
+			this->computeLagrangeMultiple(lambda, f, gradF, pos, vel, F);
+		});
+		if (flag)
+		{
+			// TODO: update rigid body
+			std::cout << "lambda : " << lambda.norm() << std::endl;
+			std::cout << "F : " << F.norm() << std::endl;
+			std::cout << "gradG : " << gradG.norm() << std::endl;
+			vel += (params_.timeStep*mInv_*(F + gradG.transpose()*lambda));
+			unbuildConfiguration(pos, vel);
+			break;
+		}
+		else
+		{
+			std::cout << "Got some trouble!\n";
+		}
 	}
-	
-	// Lagrangian, solved via Newton's method
-	// TODO : Add Rigid body coupling constraint
-	
-	Eigen::VectorXd pos, vel;
-	buildConfiguration(pos, vel);
-	pos += params_.timeStep * vel;
-	unbuildConfiguration(pos, vel);
-
-	Eigen::VectorXd F;
-	F.resizeLike(pos);
-	F.setZero();
-	computeForce(F);
-
-	//std::cout << F.size() << std::endl;
-
-	Eigen::SparseMatrix<double> gradG;
-	Eigen::VectorXd g, lambda;
-	computeContraintsAndGradient(pos, g, gradG);
-
-	lambda.resizeLike(g);
-	lambda.setZero();
-
-
-	bool flag = newtonSolver(lambda, [this, &pos, &vel, &F](Eigen::VectorXd lambda , Eigen::VectorXd &f, Eigen::SparseMatrix<double> &gradF)
-	{
-		this->computeLagrangeMultiple(lambda, f, gradF, pos, vel, F);
-	});
-	if (flag)
-	{
-		// TODO: update rigid body
-		std::cout << "lambda : " << lambda.norm() << std::endl;
-		std::cout << "F : " << F.norm() << std::endl;
-		std::cout << "gradG : " << gradG.norm() << std::endl;
-		vel += (params_.timeStep*mInv_*(F + gradG.transpose()*lambda));
-	}
-	unbuildConfiguration(pos, vel);
-	
+	params_.timeStep = prevtimestep;
 
 	Eigen::VectorXd cForce(3 * nbodies);
 	Eigen::VectorXd thetaForce(3 * nbodies);
@@ -512,10 +543,7 @@ bool ElasticHook::numericalIntegration()
 
 	}
 
-
-
-
-	return flag;
+	return true;
 }
 
 void ElasticHook::computeForce(Eigen::VectorXd & F)
@@ -525,7 +553,7 @@ void ElasticHook::computeForce(Eigen::VectorXd & F)
 
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
-		int nvars = rods_[i]->nodes.size() * 3;
+		int nvars = rods_[i]->getNodeNumbers() * 3;
 		Eigen::VectorXd f;
 		rods_[i]->computeCenterlineForces(f);
 		for (int k = 0; k < f.size(); k++)
@@ -551,10 +579,10 @@ void ElasticHook::computeGravityForce(Eigen::VectorXd & F)
 	Eigen::Vector3d gravityDir(0, 1.0, 0);
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
-		int nParticles = rods_[i]->nodes.size();
+		int nParticles = rods_[i]->getNodeNumbers();
 		for (int k = 0; k < nParticles; k++)
 		{
-			F.segment<3>(3 * (offset + k)) += params_.gravityG * rods_[i]->nodes[k].mass * gravityDir;
+			F.segment<3>(3 * (offset + k)) += params_.gravityG * rods_[i]->getNodeSegment(k).mass * gravityDir;
 		}
 		offset += nParticles;
 	}
@@ -567,12 +595,11 @@ void ElasticHook::computeContraintsAndGradient(const Eigen::VectorXd &q, Eigen::
 
 	for (int i = 0; i < (int)rods_.size(); i++)
 	{
-		nConfigurations += (3 * rods_[i]->nodes.size());
-		nConstraints += rods_[i]->nodes.size()-1;
+		nConfigurations += (3 * rods_[i]->getNodeNumbers());
+		nConstraints += rods_[i]->getRodNumbers();
 	}
 
 	g.resize(nConstraints);
-
 
 	std::vector<Eigen::Triplet<double> > dgTriplet;
 
@@ -582,7 +609,7 @@ void ElasticHook::computeContraintsAndGradient(const Eigen::VectorXd &q, Eigen::
 	for (int rodidx= 0; rodidx < (int)rods_.size(); rodidx++)
 	{
 		ElasticRod &rod = *rods_[rodidx];
-		int nparticles = (int)rod.nodes.size();
+		int nparticles = rod.getNodeNumbers();
 		for (int i = 0; i < nparticles - 1; i++)
 		{
 			Eigen::Vector3d e1, e2;
@@ -605,6 +632,7 @@ void ElasticHook::computeContraintsAndGradient(const Eigen::VectorXd &q, Eigen::
 	// TODO: deal with rigid body coupling constarint
 
 	gradG.resize(nConstraints, nConfigurations);
+	gradG.setZero();
 	gradG.setFromTriplets(dgTriplet.begin(), dgTriplet.end());
 }
 
@@ -646,7 +674,7 @@ bool ElasticHook::newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::Vec
 		x = x + dx;
 	}
 	//std::cout<<"Maximun iteration reached !!"<<std::endl;
-	return true; 
+	return false; 
 }
 
 
@@ -672,7 +700,7 @@ void ElasticHook::testProcess()
 	Eigen::VectorXd pos, vel, thetas;
 	temprod->buildConfiguration(pos, vel);
 
-	int nrods = (int)temprod->rods.size();
+	int nrods = temprod->getRodNumbers();
 	thetas.resize(nrods);
 	for (int i = 0; i < nrods; i++)
 	{
@@ -684,6 +712,7 @@ void ElasticHook::testProcess()
 		Eigen::VectorXd dummy,v;
 		temprod->buildConfiguration(dummy, v);
 		temprod->unbuildConfiguration(q, v);
+		std::cout << " The position shoould be:" << q.transpose() << std::endl;
 		double e=temprod->computeTotalEnergy();
 		temprod->unbuildConfiguration(dummy, v);
 		return e;
@@ -703,10 +732,10 @@ void ElasticHook::testProcess()
 
 	std::cout << "\n\nTest Theta Force\n";
 
-	auto energyThetaFunc = [temprod](const Eigen::VectorXd &q) {
+	/*auto energyThetaFunc = [temprod](const Eigen::VectorXd &q) {
 		Eigen::VectorXd tmp;
 		tmp.resizeLike(q);
-		for (int k = 0; k < (int)temprod->rods.size(); k++)
+		for (int k = 0; k < (int)temprod->getRodNumbers(); k++)
 		{
 			tmp[k] = temprod->getRodSegment(k).theta;
 			temprod->rods[k].theta = q(k);
@@ -743,7 +772,7 @@ void ElasticHook::testProcess()
 		H.setFromTriplets(hTriplet.begin(), hTriplet.end());
 	};
 
-	TestModule::testEnergyHessian(thetas, thetaFunc);
+	TestModule::testEnergyHessian(thetas, thetaFunc);*/
 	temprod = NULL;
 }
 
@@ -797,4 +826,93 @@ void ElasticHook::saveConfiguration(std::string filePath)
 void ElasticHook::loadConfiguration(std::string filePath)
 {
 	//TODO: load scenes I created
+}
+
+
+
+void ElasticHook::testLagrangeMultiple()
+{
+
+	Eigen::VectorXd prevq, q, vel;
+	buildConfiguration(q, vel);
+	std::cout << "Start!\n";
+	prevq = q;
+	Eigen::VectorXd F;
+	std::cout << "Here!\n";
+	q += params_.timeStep * vel;
+	unbuildConfiguration(q, vel);
+	F.resize(q.size());
+	F.setZero();
+	computeForce(F);
+	std::cout << "Here!\n";
+
+	int nRods = rods_[0]->getRodNumbers();
+
+	Eigen::VectorXd lambda = Eigen::VectorXd::Random(nRods) * 10000000;
+
+	Eigen::SparseMatrix<double> gradF(lambda.size(), lambda.size());
+	gradF.setZero();
+	Eigen::VectorXd f = Eigen::VectorXd::Zero(lambda.size());
+
+	computeLagrangeMultiple(lambda, f, gradF, q, vel, F);
+
+	Eigen::VectorXd direction = Eigen::VectorXd::Random(lambda.size());
+	direction.normalize();
+	std::cout << direction << std::endl;
+	for (int k = 1; k <= 12; k++)
+	{
+		double eps = pow(10, -k);
+
+		Eigen::VectorXd epsF = Eigen::VectorXd::Zero(lambda.size());
+		Eigen::SparseMatrix<double>  epsgradF(lambda.size(), lambda.size());
+		Eigen::VectorXd epsL = lambda + eps * direction;
+		computeLagrangeMultiple(epsL , epsF, epsgradF, q, vel, F);
+
+		std::cout << "EPS is: " << eps << std::endl;
+		std::cout << "Norm of Finite Difference is: " << (epsF - f).norm() / eps << std::endl;
+		std::cout << "Norm of Directinal Gradient is: " << (gradF*direction).norm() << std::endl;
+		std::cout << "The difference between above two is: " << ((epsF - f) / eps - gradF * direction).norm() << std::endl << std::endl;
+
+	}
+
+	unbuildConfiguration(prevq, vel);
+}
+
+void ElasticHook::testConstraintAndGradient()
+{
+	Eigen::VectorXd q, vel;
+	buildConfiguration(q, vel);
+	
+	int nRods = rods_[0]->getRodNumbers();
+
+	Eigen::VectorXd g;
+	Eigen::SparseMatrix<double> gradG;
+	computeContraintsAndGradient(q, g, gradG);
+
+	Eigen::VectorXd direction = Eigen::VectorXd::Random(q.size());
+
+	for (int i = 0; i < rods_[0]->getNodeNumbers(); i++)
+	{
+		if (rods_[0]->getNodeSegment(i).fixed)
+			direction.segment<3>(3 * i).setZero();
+	}
+
+
+	direction.normalize();
+	std::cout << direction << std::endl;
+	for (int k = 1; k <= 12; k++)
+	{
+		double eps = pow(10, -k);
+
+		Eigen::VectorXd epsF;
+		Eigen::SparseMatrix<double>  epsgradF;
+		computeContraintsAndGradient(q + eps * direction, epsF, epsgradF);
+
+		std::cout << "EPS is: " << eps << std::endl;
+		std::cout << "Norm of Finite Difference is: " << (epsF - g).norm() / eps << std::endl;
+		std::cout << "Norm of Directinal Gradient is: " << (gradG*direction).norm() << std::endl;
+		std::cout << "The difference between above two is: " << ((epsF - g) / eps - gradG * direction).norm() << std::endl << std::endl;
+
+	}
+
 }

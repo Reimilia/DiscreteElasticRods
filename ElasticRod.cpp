@@ -36,6 +36,7 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 	{
 		double l = (nodes[i + 1].pos - nodes[i].pos).norm();
 		rods.push_back(ElasticRodSegment(i,i+1,params.rodDensity * l,l));
+		rods[i].bendingModulus = params.rodBendingModulus;
 		restLength[i] = l;
 		restLength[i] = l;
 		nodes[i].mass += params.rodDensity * l / 2;
@@ -105,34 +106,43 @@ ElasticRod::~ElasticRod()
 {
 }
 
-bool ElasticRod::assignClampedBoundaryCondition(double theta0, double theta1)
+bool ElasticRod::setSimulationParameters(SimParameters para)
 {
-	// Ususally theta0=0
-
-	params.boundaryCondition = SimParameters::BC_FIXED_END;
-	rods[0].theta = theta0;
+	params = para;
 	int nRods = (int)rods.size();
-	rods[nRods -1].theta = theta1;
+	// If clamped the bounary, need to recompute everything
+	switch(para.boundaryCondition)
+	{case SimParameters::BC_FIXED_END:
+		if ((int)rods.size() < 1)
+			break;
+		rods[0].theta = para.leftendTheta;
 
-	updateMaterialCurvature();
-	for (int i = 0; i < nRods - 1; i++)
-	{
-		restCurvature.col(2 * i) = stencils[i].prevCurvature;
-		restCurvature.col(2 * i + 1) = stencils[i].nextCurvature;
+		rods[nRods - 1].theta = para.rightendTheta;
+
+		updateMaterialCurvature();
+		for (int i = 0; i < nRods - 1; i++)
+		{
+			restCurvature.col(2 * i) = stencils[i].prevCurvature;
+			restCurvature.col(2 * i + 1) = stencils[i].nextCurvature;
+		}
+		updateQuasiStaticFrame();
+
+		updateMaterialCurvature();
+		break;
+	case SimParameters::BC_RIGIDBODY_END:
+		// TODO: finish this
+		break;
+	case SimParameters::BC_FREE:
+		break;
+	default:
+		break;
 	}
-	updateQuasiStaticFrame();
-	
-	updateMaterialCurvature();
-	return true;
-}
 
-bool ElasticRod::assignRigidBodyBoundaryCondition(int idx0, int idx1)
-{
-	// TODO: Finish rigid body coupling
-	params.boundaryCondition = SimParameters::BC_RIGIDBODY_END;
-	// If id is -1, then treat as free ending
-	leftRigidBody = idx0;
-	rightRigidBody = idx1;
+	for (int i = 0; i < (int)rods.size(); i++)
+	{
+		rods[i].bendingModulus = params.rodBendingModulus;
+	}
+	
 	return true;
 }
 
@@ -178,6 +188,7 @@ bool ElasticRod::buildConfiguration(Eigen::VectorXd & pos, Eigen::VectorXd & vel
 bool ElasticRod::unbuildConfiguration(const Eigen::VectorXd & pos, const Eigen::VectorXd & vel)
 {
 	int nparticles = (int)nodes.size();
+	
 	for (int i = 0; i < nparticles; i++)
 	{
 		nodes[i].prevpos = nodes[i].pos;
@@ -201,7 +212,7 @@ double ElasticRod::computeTotalEnergy()
 		energy += (e1 + e2) / 2 / stencils[i].restlength;
 		energy += beta * (rods[i + 1].theta - rods[i].theta) * (rods[i + 1].theta - rods[i].theta) / stencils[i].restlength;
 	}
-	//std::cout << energy << std::endl;
+	std::cout << energy << std::endl;
 	return energy;
 }
 
@@ -241,6 +252,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		coef1 = rods[k].bendingModulus * (stencils[k].prevCurvature - restCurvature.col(2 * k)) / stencils[k].restlength;
 		coef2 = rods[k + 1].bendingModulus * (stencils[k].nextCurvature - restCurvature.col(2 * k + 1))/ stencils[k].restlength;
 
+
 		Eigen::Vector3d e1, e2;
 		Eigen::Matrix3d dkb1, dkb2;
 		e1 = nodes[k + 1].pos - nodes[k].pos;
@@ -279,7 +291,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			}
 			if (i >= 2 && i <= k + 1)
 			{
-				psi -= stencils[i - 2].kb / restLength[i - 1];
+				psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			}
 			if (i >= 1 && i <= k)
 			{
@@ -315,7 +327,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			psi.setZero();
 			if (i >= 2 && i <= k + 2)
 			{
-				psi -= stencils[i - 2].kb / restLength[i - 1];
+				psi = psi - stencils[i - 2].kb / restLength[i - 1];
 			}
 			if (i >= 1 && i <= k + 1) 
 			{
@@ -463,7 +475,7 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 		updateAfterPosChange();
 	
 	}*/
-	std::cout << "3:" << f.norm() << std::endl;
+	//std::cout << "3:" << f.norm() << std::endl;
 	if (params.boundaryCondition == SimParameters::BC_FIXED_END)
 	{
 		double dEdtheta = 
@@ -476,14 +488,14 @@ void ElasticRod::computeCenterlineForces(Eigen::VectorXd &f)
 			Eigen::Vector3d psi;	
 			psi.setZero();
 			if (i > 1) psi = psi - stencils[i - 2].kb / restLength[i - 1];
-			if (i > 0 && i <= nstencils) psi = psi + (stencils[i - 1].kb / restLength[i] - stencils[i - 1].kb / restLength[i - 1]);
+			if (i > 0 && i <= nstencils) psi = psi + (stencils[i - 1].kb / restLength[i]) - (stencils[i - 1].kb / restLength[i - 1]);
 			if (i < nstencils) psi = psi + (stencils[i].kb / restLength[i]);
 			psi = psi / 2;
 			f.segment<3>(3 * i) += (dEdtheta * psi);
 		}
 
 	}
-	std::cout << "4:" << f.norm() << std::endl;
+	//std::cout << "4:" << f.norm() << std::endl;
 }
 
 void ElasticRod::computeEnergyThetaDifferentialAndHessian(const Eigen::VectorXd &theta, Eigen::VectorXd & dE, Eigen::VectorXd & lowerH, Eigen::VectorXd & centerH, Eigen::VectorXd & upperH)
@@ -519,24 +531,24 @@ void ElasticRod::computeEnergyThetaDifferentialAndHessian(const Eigen::VectorXd 
 		if (i < nrods-1)
 		{
 			Eigen::Vector2d prevCurvature = Eigen::Vector2d((stencils[i].kb).dot(m2), -(stencils[i].kb).dot(m1));
-			dE[i] -= 2 * beta * (theta[i + 1] - theta[i]) / stencils[i].restlength;
+			dE[i] -= 2 * beta * (theta[i + 1] - theta[i]) / stencils[i].length;
 			double dw = prevCurvature.dot(J*rods[i].bendingModulus* (prevCurvature - restCurvature.col(2 * i)));
-			dE[i] +=  dw / stencils[i].restlength;
-			upperH[i] = -2 * beta / stencils[i].restlength;
-			centerH[i] += 2 * beta / stencils[i].restlength + 
+			dE[i] +=  dw / stencils[i].length;
+			upperH[i] = -2 * beta / stencils[i].length;
+			centerH[i] += 2 * beta / stencils[i].length +
 				(prevCurvature.dot(J.transpose()*rods[i].bendingModulus*J*prevCurvature) - 
-				(prevCurvature).dot(rods[i].bendingModulus* (prevCurvature - restCurvature.col(2 * i)))) / stencils[i].restlength;
+				(prevCurvature).dot(rods[i].bendingModulus* (prevCurvature - restCurvature.col(2 * i)))) / stencils[i].length;
 		}
 		if (i > 0)
 		{
 			Eigen::Vector2d nextCurvature = Eigen::Vector2d((stencils[i - 1].kb).dot(m2), -(stencils[i - 1].kb).dot(m1));
-			dE[i] += 2 * beta * (theta[i] - theta[i - 1]) / stencils[i - 1].restlength;
+			dE[i] += 2 * beta * (theta[i] - theta[i - 1]) / stencils[i - 1].length;
 			double dw = nextCurvature.dot(J*rods[i].bendingModulus* (nextCurvature - restCurvature.col(2 * i - 1)));
-			dE[i] +=  dw / stencils[i - 1].restlength;
-			lowerH[i] = -2 * beta / stencils[i - 1].restlength;
-			centerH[i] += 2 * beta / stencils[i - 1].restlength + 
+			dE[i] +=  dw / stencils[i - 1].length;
+			lowerH[i] = -2 * beta / stencils[i - 1].length;
+			centerH[i] += 2 * beta / stencils[i - 1].length +
 				(nextCurvature.dot(J.transpose()*rods[i].bendingModulus*J*nextCurvature) - 
-				nextCurvature.dot(rods[i].bendingModulus* (nextCurvature - restCurvature.col(2 * i - 1)))) / stencils[i - 1].restlength;
+				nextCurvature.dot(rods[i].bendingModulus* (nextCurvature - restCurvature.col(2 * i - 1)))) / stencils[i - 1].length;
 		}
 		
 	}
@@ -580,7 +592,7 @@ void ElasticRod::updateAfterPosChange()
 	updateMaterialCurvature();
 }
 
-void ElasticRod::updateQuasiStaticFrame()
+bool ElasticRod::updateQuasiStaticFrame()
 {
 	/*
 	Using Newton's method to solve non-linear equation to determine twist angle theta in each rod element
@@ -605,8 +617,8 @@ void ElasticRod::updateQuasiStaticFrame()
 		thetas[i] = rods[i].theta;
 	}
 
-
-	for (int t = 0; t < params.NewtonMaxIters; t++)
+	int t;
+	for (t = 0; t < params.NewtonMaxIters; t++)
 	{
 		//std::cout << thetas.transpose() << std::endl;
 		computeEnergyThetaDifferentialAndHessian(thetas, dE, lowerH, centerH, upperH);
@@ -643,13 +655,22 @@ void ElasticRod::updateQuasiStaticFrame()
 		
 
 	}
-	//std::cout << thetas.transpose() << std::endl;
+	std::cout << thetas.maxCoeff() << std::endl;
 	// Unbuild configuration
-	for (int i = 0; i < nrods; i++)
+	if (t < params.NewtonMaxIters)
 	{
-		rods[i].theta = thetas[i];
+		for (int i = 0; i < nrods; i++)
+		{
+			rods[i].theta = thetas[i];
+		}
+		updateMaterialCurvature();
+		return true;
 	}
-	updateMaterialCurvature();
+	else
+	{
+		std::cout << "Update theta fails!\n";
+		return false;
+	}
 }
 
 void ElasticRod::updateBishopFrame()

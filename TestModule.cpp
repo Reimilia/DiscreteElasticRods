@@ -9,12 +9,14 @@ bool TestModule::testEnergyDifferential(const Eigen::VectorXd &q, std::function<
 	std::cout << "Derivative is : " << f.norm() << std::endl;
 	double E0;
 	E0 = computeEnergy(q);
+	std::cout << "Original position is" << q.transpose() << std::endl;
 	Eigen::VectorXd direction = Eigen::VectorXd::Random(q.size());
 	direction.normalize();
 
 	for (int k = 3; k <= 12; k++)
 	{
 		double eps = pow(10, -k);
+		std::cout << "New proposed : " << (q + eps * direction).transpose() << std::endl;
 		double E1 = computeEnergy(q + eps * direction);
 
 		std::cout << "EPS is: " << eps << std::endl;

@@ -96,7 +96,7 @@ private:
 	void addParticle(double x, double y, double z);
 
 	void buildConfiguration(Eigen::VectorXd &, Eigen::VectorXd &);
-	void unbuildConfiguration(const Eigen::VectorXd &, const Eigen::VectorXd &);
+	bool unbuildConfiguration(const Eigen::VectorXd &, const Eigen::VectorXd &);
 
 	void computeMassInverse(Eigen::SparseMatrix<double> &Minv);
 	bool numericalIntegration();
@@ -116,6 +116,8 @@ private:
 	bool newtonSolver(Eigen::VectorXd &x, std::function<void(Eigen::VectorXd &, Eigen::VectorXd &, Eigen::SparseMatrix<double> &)> _computeForceAndHessian);
 
 	void testProcess();
+	void testLagrangeMultiple();
+	void testConstraintAndGradient();
 };
 
 #endif
