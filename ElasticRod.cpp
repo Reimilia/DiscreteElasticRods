@@ -67,19 +67,29 @@ ElasticRod::ElasticRod(std::vector<Particle, Eigen::aligned_allocator<Particle>>
 
 	// The first one material frame need to set up manually
 	// The best choice is the body template coordinate frame at the first centerline.
-	/*t0 = nodes[1].pos - nodes[0].pos;
-	t0 = t0 / t0.norm();
-	// u0 $\perp$ t0
-	u0 = Eigen::Vector3d(t0[2] - t0[1], t0[0] - t0[2], t0[1] - t0[0]);
-	u0 = u0 / u0.norm();
-	v0 = t0.cross(u0);
+	rods[0].t = nodes[1].pos - nodes[0].pos;
+	rods[0].t = rods[0].t / rods[0].t.norm();
+	rods[0].u = Eigen::Vector3d(rods[0].t[2] - rods[0].t[1], rods[0].t[0] - rods[0].t[2], rods[0].t[1] - rods[0].t[0]);
+	rods[0].u = rods[0].u / rods[0].u.norm();
+	rods[0].v = rods[0].t.cross(rods[0].u);
+	rods[0].v /= rods[0].v.norm();
 
-	rods[0].t = t0;
-	rods[0].u = u0;
-	rods[0].v = v0;*/
+	switch (para.boundaryCondition)
+	{
+	case SimParameters::BC_FIXED_END:
+		if (nNodes < 2)
+			break;
+		rods[0].theta = para.leftAngularVelocity * para.timeStep;
 
-	params.boundaryCondition = SimParameters::BC_FREE;
-	
+		rods[nNodes - 2].theta = para.rightAngularVelocity * para.timeStep;
+	case SimParameters::BC_RIGIDBODY_END:
+		// TODO: finish this
+		break;
+	case SimParameters::BC_FREE:
+		break;
+	default:
+		break;
+	}
 	// Compute the bishop frame
 	updateBishopFrame();
 
@@ -111,13 +121,13 @@ bool ElasticRod::setSimulationParameters(SimParameters para)
 	params = para;
 	int nRods = (int)rods.size();
 	// If clamped the bounary, need to recompute everything
-	switch(para.boundaryCondition)
+	/*switch(para.boundaryCondition)
 	{case SimParameters::BC_FIXED_END:
 		if ((int)rods.size() < 1)
 			break;
-		rods[0].theta = para.leftendTheta;
+		rods[0].theta = 0;
 
-		rods[nRods - 1].theta = para.rightendTheta;
+		rods[nRods - 1].theta = 0;
 
 		updateMaterialCurvature();
 		for (int i = 0; i < nRods - 1; i++)
@@ -136,7 +146,7 @@ bool ElasticRod::setSimulationParameters(SimParameters para)
 		break;
 	default:
 		break;
-	}
+	}*/
 
 	for (int i = 0; i < (int)rods.size(); i++)
 	{
@@ -195,6 +205,13 @@ bool ElasticRod::unbuildConfiguration(const Eigen::VectorXd & pos, const Eigen::
 		nodes[i].pos = pos.segment<3>(3 * i);
 		nodes[i].vel = vel.segment<3>(3 * i);
 	}
+
+	if (nparticles >= 3 && params.boundaryCondition == SimParameters::BC_FIXED_END)
+	{
+		rods[0].theta += params.timeStep * params.leftAngularVelocity;
+		rods[nparticles-2].theta += params.timeStep * params.rightAngularVelocity;
+	}
+	
 	updateAfterPosChange();
 	return true;
 }
@@ -583,6 +600,7 @@ void ElasticRod::updateAfterPosChange()
 		e1 = nodes[i + 1].pos - nodes[i].pos;
 		e2 = nodes[i + 2].pos - nodes[i + 1].pos;
 		stencils[i].kb = 2 * e1.cross(e2) / (restLength[i] * restLength[i+1] + e1.dot(e2));
+		//std::cout << stencils[i].kb.transpose() << std::endl;
 	}
 	//compute t,u,v
 	updateBishopFrame();
@@ -655,7 +673,7 @@ bool ElasticRod::updateQuasiStaticFrame()
 		
 
 	}
-	std::cout << thetas.maxCoeff() << std::endl;
+	//std::cout << thetas.transpose() << std::endl;
 	// Unbuild configuration
 	if (t < params.NewtonMaxIters)
 	{
@@ -681,13 +699,13 @@ void ElasticRod::updateBishopFrame()
 	*/
 
 	int nRods = (int)rods.size();
-
 	rods[0].t = nodes[1].pos - nodes[0].pos;
 	rods[0].t = rods[0].t / rods[0].t.norm();
 	rods[0].u = Eigen::Vector3d(rods[0].t[2] - rods[0].t[1], rods[0].t[0] - rods[0].t[2], rods[0].t[1] - rods[0].t[0]);
 	rods[0].u = rods[0].u / rods[0].u.norm();
 	rods[0].v = rods[0].t.cross(rods[0].u);
 	rods[0].v /= rods[0].v.norm();
+	
 
 	// Now compute Bishop frame
 	for (int i = 1; i < nRods; i++)

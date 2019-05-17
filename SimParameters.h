@@ -9,7 +9,7 @@ struct SimParameters
     {
         constraintHandling = CH_PENALTY;
 		integrator = TI_VELOCITY_VERLET;
-        timeStep = 0.0001;
+        timeStep = 0.001;
         NewtonMaxIters = 20;
         NewtonTolerance = 1e-10;
         penaltyStiffness = 1e5;
@@ -31,18 +31,18 @@ struct SimParameters
         //maxSpringDist = 1e5;
         particleFixed = false;
 
-        rodDensity = 10;
-		rodTwistStiffness = 0.5;
+        rodDensity = 1;
+		rodTwistStiffness = 0.075;
 		//rodStretchingStiffness = 100;
         //rodBendingStiffness = 0.05;
         rodSegments = 5;
 
         //sawRadius= 0.1;
-		rodBendingModulus = 0.5 * Eigen::Matrix2d::Identity();
+		rodBendingModulus << 0.1, -0.03, -0.03, 0.05;
 		boundaryCondition = BC_FREE;
 
-		leftendTheta = 0;
-		rightendTheta = M_PI / 3.0;
+		leftAngularVelocity = 0;
+		rightAngularVelocity = M_PI;
     }
 
 	enum BoundaryCondition
@@ -86,7 +86,7 @@ struct SimParameters
 	double rodTwistStiffness;
 	int rodSegments;
 	Eigen::Matrix2d rodBendingModulus;
-	double leftendTheta, rightendTheta;
+	double leftAngularVelocity, rightAngularVelocity;
 };
 
 #endif

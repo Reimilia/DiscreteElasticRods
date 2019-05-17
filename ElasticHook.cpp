@@ -29,8 +29,7 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 		//Test Part
 		if (ImGui::Button("Test", ImVec2(-1, 0)))
 		{
-			testLagrangeMultiple();
-			testConstraintAndGradient();
+			testProcess();
 		}
 	}
 	/*if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
@@ -74,8 +73,8 @@ void ElasticHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
 		ImGui::InputDouble("B(1,0)", &params_.rodBendingModulus(1, 0));
 		ImGui::InputDouble("B(1,1)", &params_.rodBendingModulus(1, 1));
 		ImGui::Combo("Boundary Conditions", (int *)&params_.boundaryCondition, "Free\0Clamped End\0\0");
-		ImGui::InputDouble("Left End Rotation", &params_.leftendTheta);
-		ImGui::InputDouble("Right End Rotation", &params_.rightendTheta);
+		ImGui::InputDouble("Left End Rotation", &params_.leftAngularVelocity);
+		ImGui::InputDouble("Right End Rotation", &params_.rightAngularVelocity);
 
 	}
 
@@ -148,7 +147,7 @@ void ElasticHook::updateRenderGeometry()
 	}
 
 
-	double basescale = 0.1;
+	double basescale = 0.005;
 	
 	for (RigidBodyInstance *rbi : bodies_)
     {
@@ -195,7 +194,7 @@ void ElasticHook::updateRenderGeometry()
 		{
 			int nverts = rodTemplate_->getVerts().rows();
 			ElasticRodSegment onebar = rod->getRodSegment(k);
-			Eigen::Vector3d width(10 * onebar.length , 1, 1);
+			Eigen::Vector3d width(0.1 * onebar.length, 0.015, 0.010);
 			Eigen::Vector3d c = (rod->getNodeSegment(k).pos + rod->getNodeSegment(k+1).pos) / 2;
 			Eigen::Matrix3d rotation;
 			rotation.col(0) = onebar.t;
@@ -209,10 +208,14 @@ void ElasticHook::updateRenderGeometry()
 			
 			for (int i = 0; i < nverts; i++)
 			{
-				Eigen::Vector3d point = rodTemplate_->getVerts().row(i);
-				double dist = (point - rod->getNodeSegment(k).pos).dot(onebar.t);
+				Eigen::Vector3d point = rodTemplate_->getVerts().row(i).transpose();
+				double coef = (point(0) + 5)/10.0;
+				rotation.col(1) = cos(coef * onebar.theta) * onebar.u + sin(coef * onebar.theta) * onebar.v;
+				rotation.col(2) = -sin(coef * onebar.theta) * onebar.u + cos(coef * onebar.theta) * onebar.v;
+				theta = VectorMath::axisAngle(rotation);
 				Eigen::Vector3d pos;
 				pos = c + VectorMath::rotationMatrix(theta)* point.cwiseProduct(width);
+
 				//renderQ.row(voffset + i) = rod->renderPos(pos,k);
 				renderQ.row(voffset + i) = pos;
 			}	
@@ -436,7 +439,7 @@ bool ElasticHook::numericalIntegration()
 	// Adaptive Stepsize
 	int nbodies = (int)bodies_.size();
 	double prevtimestep = params_.timeStep;
-	for (double k = 1.0; k > 1e-3; k /= 2)
+	for (double k = 1.0; k > 1e-5; k /= 10)
 	{
 		params_.timeStep = prevtimestep * k;
 		std::vector<Eigen::Vector3d> oldthetas;
@@ -814,7 +817,7 @@ void ElasticHook::loadMesh()
 	ballTemplate_ = new RigidBodyTemplate(meshFilename, 0.01);
 	meshFilename = prefix + std::string("meshes/box.obj");
 	if(rodTemplate_) delete rodTemplate_;
-	rodTemplate_ = new RigidBodyTemplate(meshFilename, 0.01);
+	rodTemplate_ = new RigidBodyTemplate(meshFilename, 1.0);
 	std::cout << "Initialize Complete!\n";
 }
 
